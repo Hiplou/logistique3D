@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.15)
+  Gestion de stock — stock et production 3D  (v1.16)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.15]</title>
+<title>Gestion de stock [v1.16]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -433,7 +433,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.15</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.16</p>
   </div>
 </div>
 
@@ -443,7 +443,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.15</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.16</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1149,7 +1149,7 @@ function entrerDansApp(v){
     const p2 = document.getElementById('signup-pass2'); if(p2) p2.value='';
     const bn = document.getElementById('brand-name');
     if(bn && account) bn.textContent = account.nom || '';
-    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.15]';
+    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.16]';
     renderTabs();
     renderContent();
     setSyncStatus(window.__syncStatus || 'saved');
@@ -3826,6 +3826,17 @@ function prodAnnuleLivraison(orderId){
   });
 }
 
+/* Prix d'une commande. Les prix saisis sont soit HT, soit TTC selon le
+   contrat : on convertit dans les deux sens \u00e0 partir du taux de TVA. */
+function prodTotal(o){
+  const tva = (o && isFinite(Number(o.tva))) ? Number(o.tva) : 20;
+  const somme = (o.lignes||[]).reduce((t,l)=>
+    t + (Number(l.qte)||0) * (Number(l.prix)||0), 0);
+  const ttc = o.prixTTC ? somme : somme * (1 + tva/100);
+  const ht  = o.prixTTC ? somme / (1 + tva/100) : somme;
+  return {ht, ttc, tva, saisi: somme, base: o.prixTTC ? 'TTC' : 'HT'};
+}
+
 function prodCommandesEnCours(){
   return (state.orders||[]).filter(o=>!o.fait)
     .sort((a,b)=> String(a.dateLivraison||'').localeCompare(String(b.dateLivraison||'')));
@@ -4733,7 +4744,8 @@ function viewProdCommandes(){
     return `<div class="prod-row" style="${o.livree?'opacity:0.6;':''}display:flex;align-items:center;gap:10px;" onclick="prodOpenCommande('${o.id}')">
       <div style="flex:1;min-width:0;">
         <div class="prod-row-nom">${esc(o.client||'Sans client')}</div>
-        <div class="prod-row-sub">\u00c0 livrer le ${fmtDate(o.dateLivraison)} \u00b7 ${n} pi\u00e8ce${n>1?'s':''}</div>
+        <div class="prod-row-sub">\u00c0 livrer le ${fmtDate(o.dateLivraison)} \u00b7 ${n} pi\u00e8ce${n>1?'s':''}${
+          prodTotal(o).saisi ? ` \u00b7 ${fmtEUR(prodTotal(o).ttc)} TTC` : ''}</div>
         <div class="prod-row-sub" style="color:${e.coul};font-weight:600;">${e.txt}</div>
       </div>
       ${prodPastille(o)}
@@ -4745,15 +4757,25 @@ function viewProdCommandes(){
 function prodOpenCommande(id){
   const o = id ? (state.orders||[]).find(x=>x.id===id) : null;
   window.__prodCmd = o ? o.id : null;
-  window.__prodLignes = o ? (o.lignes||[]).map(l=>({recipeId:l.recipeId, qte:l.qte})) : [];
+  window.__prodLignes = o ? (o.lignes||[]).map(l=>({recipeId:l.recipeId, qte:l.qte, prix:(l.prix != null ? l.prix : '')})) : [];
   openModal(`
     <h3>${o?'Modifier la commande':'Nouvelle commande'}</h3>
     <div class="field"><label>Client</label>
       <input type="text" id="pc-client" value="${o?esc(o.client||''):''}" placeholder="Boutique, particulier, salon…"></div>
     <div class="field"><label>À livrer le</label>
       <input type="date" id="pc-date" value="${o?esc(o.dateLivraison||''):prodPlusJours(todayISO(),21)}"></div>
+    <div style="display:flex;gap:10px;">
+      <div class="field" style="flex:1;"><label>Les prix saisis sont</label>
+        <select id="pc-base" onchange="prodRenderTotal()">
+          <option value="ht"  ${o&&o.prixTTC?'':'selected'}>Hors taxes</option>
+          <option value="ttc" ${o&&o.prixTTC?'selected':''}>TTC</option>
+        </select></div>
+      <div class="field" style="flex:1;"><label>TVA en %</label>
+        <input type="text" id="pc-tva" inputmode="decimal" value="${o&&isFinite(Number(o.tva))?esc(o.tva):'20'}" onchange="prodRenderTotal()"></div>
+    </div>
     <div class="field"><label>Pièces commandées</label><div id="pc-lignes"></div>
-      <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="prodAjoutLigne()">Ajouter une pièce</button></div>
+      <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="prodAjoutLigne()">Ajouter une pièce</button>
+      <div id="pc-total" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);"></div></div>
     <div class="field"><label>Note</label>
       <input type="text" id="pc-note" value="${o?esc(o.note||''):''}" placeholder="Coloris, finition, contact…"></div>
     ${o?`<div class="checkline"><input type="checkbox" id="pc-fait" ${o.fait?'checked':''}>
@@ -4773,45 +4795,92 @@ function prodOpenCommande(id){
 function prodRenderLignes(){
   const box = document.getElementById('pc-lignes'); if(!box) return;
   const rec = state.recipes || [];
-  if(!rec.length){ box.innerHTML = `<p class="prod-note">Créez d'abord un article dans l'onglet Articles.</p>`; return; }
+  if(!rec.length){ box.innerHTML = `<p class="prod-note">Cr\u00e9ez d'abord un article dans l'onglet Articles.</p>`; return; }
   const L = window.__prodLignes || [];
-  if(!L.length){ box.innerHTML = `<p class="prod-note">Aucune pièce pour l'instant.</p>`; return; }
-  box.innerHTML = L.map((l,i)=>`
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-      <select style="flex:1;min-width:0;" onchange="prodMajLigne(${i},'recipeId',this.value)">
-        ${rec.map(r=>`<option value="${r.id}" ${l.recipeId===r.id?'selected':''}>${esc(r.nom)}</option>`).join('')}
-      </select>
-      <input type="text" inputmode="numeric" pattern="[0-9]*" style="width:62px;flex:none;text-align:center;"
-             value="${esc(l.qte)}" onchange="prodMajLigne(${i},'qte',this.value)">
-      <button class="btn btn-ghost btn-sm" onclick="prodSupprLigne(${i})">✕</button>
-    </div>`).join('');
+  if(!L.length){ box.innerHTML = `<p class="prod-note">Aucune pi\u00e8ce pour l'instant.</p>`; prodRenderTotal(); return; }
+
+  box.innerHTML = L.map((l,i)=>{
+    const total = (Number(l.qte)||0) * (Number(l.prix)||0);
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:8px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:7px;">
+        <select style="flex:1;min-width:0;" onchange="prodMajLigne(${i},'recipeId',this.value)">
+          ${rec.map(r=>`<option value="${r.id}" ${l.recipeId===r.id?'selected':''}>${esc(r.nom)}</option>`).join('')}
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="prodSupprLigne(${i})">\u2715</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span style="font-size:11.5px;color:var(--ink-soft);flex:none;">Qt\u00e9</span>
+        <input type="text" inputmode="numeric" pattern="[0-9]*" style="width:54px;flex:none;text-align:center;"
+               value="${esc(l.qte)}" onchange="prodMajLigne(${i},'qte',this.value)">
+        <span style="font-size:11.5px;color:var(--ink-soft);flex:none;">Prix unitaire</span>
+        <input type="text" inputmode="decimal" style="flex:1;min-width:0;text-align:right;"
+               value="${l.prix != null && l.prix !== '' ? esc(l.prix) : ''}" onchange="prodMajLigne(${i},'prix',this.value)">
+      </div>
+      ${total ? `<div class="prod-row-sub" style="text-align:right;margin-top:5px;">${fmtEUR(total)}</div>` : ''}
+    </div>`;
+  }).join('');
+  prodRenderTotal();
 }
+
+/* Total affich\u00e9 sous les lignes, recalcul\u00e9 \u00e0 chaque saisie. */
+function prodRenderTotal(){
+  const box = document.getElementById('pc-total'); if(!box) return;
+  const base = document.getElementById('pc-base');
+  const tvaEl = document.getElementById('pc-tva');
+  const t = prodTotal({
+    lignes: window.__prodLignes || [],
+    prixTTC: base ? base.value === 'ttc' : false,
+    tva: tvaEl ? tvaEl.value : 20
+  });
+  box.innerHTML = t.saisi
+    ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft);">
+         <span>Total hors taxes</span><span>${fmtEUR(t.ht)}</span></div>
+       <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:600;color:var(--ink);margin-top:3px;">
+         <span>Total TTC</span><span>${fmtEUR(t.ttc)}</span></div>`
+    : `<p class="prod-note" style="margin:0;">Renseignez un prix unitaire pour obtenir le total.</p>`;
+}
+
 function prodAjoutLigne(){
   const rec = state.recipes || [];
   if(!rec.length){ toast("Créez d'abord un article"); return; }
   window.__prodLignes = window.__prodLignes || [];
-  window.__prodLignes.push({recipeId: rec[0].id, qte: 1});
+  const r0 = rec[0];
+  const fini = r0 ? state.products.find(pp=>pp.id === r0.produitFiniId) : null;
+  window.__prodLignes.push({recipeId: r0.id, qte: 1, prix: (fini && fini.price) || ''});
   prodRenderLignes();
 }
 function prodMajLigne(i, champ, val){
   const L = window.__prodLignes || []; if(!L[i]) return;
-  L[i][champ] = champ === 'qte' ? Math.max(1, parseInt(val,10) || 1) : val;
-  if(champ === 'qte') prodRenderLignes();
+  if(champ === 'qte')       L[i].qte  = Math.max(1, parseInt(val,10) || 1);
+  else if(champ === 'prix') L[i].prix = String(val||'').replace(',', '.').replace(/[^0-9.]/g,'');
+  else{
+    L[i][champ] = val;
+    const r = prodRecette(val);
+    const fini = r ? state.products.find(pp=>pp.id === r.produitFiniId) : null;
+    if(!L[i].prix && fini && fini.price) L[i].prix = fini.price;
+  }
+  prodRenderLignes();
 }
 function prodSupprLigne(i){ (window.__prodLignes||[]).splice(i,1); prodRenderLignes(); }
 function prodAppliqueCommande(silencieux){
   const dateEl = document.getElementById('pc-date');
   if(!dateEl) return false;
   const date = dateEl.value;
-  const L = (window.__prodLignes||[]).filter(l=>l.recipeId && Number(l.qte) > 0);
+  const L = (window.__prodLignes||[]).filter(l=>l.recipeId && Number(l.qte) > 0)
+    .map(l=>({recipeId:l.recipeId, qte:Number(l.qte)||1, prix:Number(l.prix)||0}));
   if(!date || !L.length){
     if(!silencieux) toast(!date ? 'Indiquez la date de livraison' : 'Ajoutez au moins une pi\u00e8ce');
     return false;
   }
   const f = document.getElementById('pc-fait');
+  const baseEl = document.getElementById('pc-base');
+  const tvaEl  = document.getElementById('pc-tva');
   const d = {
     client: (document.getElementById('pc-client')||{}).value.trim(),
     dateLivraison: date, lignes: L,
+    prixTTC: baseEl ? baseEl.value === 'ttc' : false,
+    tva: tvaEl && isFinite(parseFloat(String(tvaEl.value).replace(',','.')))
+         ? parseFloat(String(tvaEl.value).replace(',','.')) : 20,
     note: (document.getElementById('pc-note')||{}).value.trim(),
     fait: f ? f.checked : false
   };
