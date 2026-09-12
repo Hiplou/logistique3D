@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.13)
+  Gestion de stock — stock et production 3D  (v1.14)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.13]</title>
+<title>Gestion de stock [v1.14]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -272,6 +272,9 @@
     font-weight:600;color:var(--ink);min-width:112px;max-width:112px;z-index:3;font-size:11.5px;}
   table.rp thead th.rp-mac{z-index:4;background:var(--bg);}
   table.rp .rp-auj{background:var(--teal-pale);}
+  table.rp tr.rp-lieu th,table.rp tr.rp-lieu td{background:var(--teal-dark);color:#EDF0FC;
+    font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:5px 8px;}
+  table.rp tr.rp-lieu th.rp-mac{background:var(--teal-dark);color:#EDF0FC;}
   .rp-chip{border-radius:7px;padding:4px 6px;margin-bottom:4px;line-height:1.3;
     font-size:10.5px;word-break:break-word;}
   .rp-chip span{display:block;font-size:9.5px;opacity:.75;}
@@ -428,7 +431,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.13</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.14</p>
   </div>
 </div>
 
@@ -438,7 +441,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.13</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.14</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1144,7 +1147,7 @@ function entrerDansApp(v){
     const p2 = document.getElementById('signup-pass2'); if(p2) p2.value='';
     const bn = document.getElementById('brand-name');
     if(bn && account) bn.textContent = account.nom || '';
-    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.13]';
+    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.14]';
     renderTabs();
     renderContent();
     setSyncStatus(window.__syncStatus || 'saved');
@@ -1599,6 +1602,18 @@ function setSub(group,id){ activeSub[group]=id; renderContent(); }
 
 function renderContent(){
   const c = document.getElementById('content');
+  try{ renderVue(c); }
+  catch(e){
+    console.error('Rendu impossible', e);
+    c.innerHTML = `<div class="panel"><div class="panel-title"><h2>Affichage impossible</h2></div>
+      <p style="font-size:13px;color:var(--ink-soft);line-height:1.5;">
+        Cet onglet n'a pas pu s'afficher. Vos données ne sont pas perdues.</p>
+      <pre style="font-size:11px;white-space:pre-wrap;color:var(--rust);background:var(--bg);
+        border:1px solid var(--border);border-radius:10px;padding:10px;overflow:auto;">${esc(String(e && e.message || e))}</pre>
+      <button class="btn btn-outline btn-sm" onclick="setTab('accueil')">Revenir à l'accueil</button></div>`;
+  }
+}
+function renderVue(c){
   if(activeTab==='accueil') c.innerHTML = viewAccueil();
   else if(activeTab==='stock') c.innerHTML = viewStock();
   else if(activeTab==='arrivee') c.innerHTML = viewArrivee();
@@ -4080,10 +4095,27 @@ function viewProdSuivi(){
     return `<th class="${iso===aujIso?'rp-auj':''}">${jr}<br><b>${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</b></th>`;
   }).join('');
 
-  const lignes = machines.map(m=>`
+  // Les machines sont groupées par lieu : un atelier se lit d'un bloc.
+  const parLieu = [];
+  (state.sites||[]).forEach(s=>{
+    const l = machines.filter(m=>m.siteId === s.id);
+    if(l.length) parLieu.push({site:s, machines:l});
+  });
+  const orphelines = machines.filter(m=>!(state.sites||[]).some(s=>s.id === m.siteId));
+  if(orphelines.length) parLieu.push({site:{nom:'Sans lieu'}, machines:orphelines});
+
+  const ligneMachine = m=>`
     <tr><th class="rp-mac">${esc(m.nom)}</th>
       ${cols.map(iso=>`<td class="${iso===aujIso?'rp-auj':''}">${(cellules[m.id+'|'+iso]||[]).join('')}</td>`).join('')}
-    </tr>`).join('');
+    </tr>`;
+
+  const lignes = parLieu.map(g=>{
+    const enTete = parLieu.length > 1
+      ? `<tr class="rp-lieu"><th class="rp-mac">${esc(g.site.nom)}</th>
+           <td colspan="${cols.length}">${g.machines.length} machine${g.machines.length>1?'s':''}</td></tr>`
+      : '';
+    return enTete + g.machines.map(ligneMachine).join('');
+  }).join('');
 
   return `
     <p class="prod-note" style="margin:0 0 10px 0;">Une ligne par machine, une colonne par jour. Touchez une pi\u00e8ce pr\u00e9vue pour la valider ou la d\u00e9clarer rat\u00e9e : une pi\u00e8ce valid\u00e9e passe en discret, une rat\u00e9e est automatiquement replanifi\u00e9e.</p>
@@ -4109,9 +4141,18 @@ function prodChoixPiece(orderId, recipeId, printerId, pieces){
 
 async function prodValide(orderId, recipeId, printerId, pieces, ok){
   state.runs = state.runs || [];
+  const n = Number(pieces) || 1;
   state.runs.push({id:uid(), orderId, recipeId, printerId,
-    pieces: ok ? (Number(pieces)||1) : 0, statut: ok ? 'fait' : 'rate',
+    pieces: ok ? n : 0, statut: ok ? 'fait' : 'rate',
     at: new Date().toISOString(), user: state.user || null});
+
+  // Une piece validee entre directement dans le stock.
+  const rec = prodRecette(recipeId);
+  if(ok && rec && rec.produitFiniId && state.products.some(pp=>pp.id === rec.produitFiniId)){
+    state.movements.push({id:uid(), productId:rec.produitFiniId, type:'in', qty:n,
+      date:new Date().toISOString(), user:state.user || null,
+      source:'production', note:'Impression validee'});
+  }
   const o = (state.orders||[]).find(x=>x.id===orderId);
   if(ok && o && !o.fait && (o.lignes||[]).every(l=>prodReste(o,l) <= 0)){
     o.fait = true; toast('Commande terminée');
@@ -4348,7 +4389,9 @@ function viewProdArticles(){
     return `<div class="prod-row" onclick="prodOpenArticle('${r.id}')">
       <div class="prod-row-nom">${esc(r.nom)}</div>
       <div class="prod-row-sub">${f?esc(f.name):'Bobine non renseignée'} · ${r.piecesParBobine||'?'} pièces par bobine</div>
-      <div class="prod-row-sub">${prodDuree(r.minutesPiece)} par impression${pp>1?`, ${pp} pièces à la fois`:''} · ${prodManip(r)} min de manipulation · ${m?`${m} imprimante${m>1?'s':''}`:'aucune imprimante'}</div>
+      <div class="prod-row-sub">${prodDuree(r.minutesPiece)} par impression${pp>1?`, ${pp} pièces à la fois`:''} · ${m?`${m} imprimante${m>1?'s':''}`:'aucune imprimante'}</div>
+      <div class="prod-row-sub">${(()=>{ const f = state.products.find(x=>x.id===r.produitFiniId);
+        return f ? `Validée, la pièce entre en stock sous « ${esc(f.name)} »` : 'Aucun produit fini relié';})()}</div>
     </div>`;
   }).join('') : `<div class="empty">Aucun article. Un article, c'est la recette d'impression d'une pièce : sa bobine, son rendement, sa durée.</div>`;
   return `<div style="display:flex;gap:8px;margin-bottom:12px;">
@@ -4393,6 +4436,13 @@ function prodOpenArticle(id){
            <button class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="prodVersNouvelleBobine()">Cr\u00e9er une bobine</button>`}
       ${bobines.length?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="prodVersNouvelleBobine()">+ Ajouter une autre bobine</button>`:''}
     </div>
+
+    <div class="field"><label>Produit fini cr\u00e9\u00e9 en stock \u2014 une pi\u00e8ce valid\u00e9e y entre toute seule</label>
+      <select id="pa-fini">
+        <option value="">\u2014 aucun, pas d'entr\u00e9e en stock \u2014</option>
+        <option value="__creer">Cr\u00e9er un produit \u00e0 ce nom</option>
+        ${autres.map(pp=>`<option value="${pp.id}" ${r&&r.produitFiniId===pp.id?'selected':''}>${esc(pp.name)}</option>`).join('')}
+      </select></div>
 
     <div class="field"><label>Pi\u00e8ces obtenues avec une bobine</label>
       <input type="text" id="pa-rend" inputmode="numeric" pattern="[0-9]*" value="${r?esc(r.piecesParBobine):''}"></div>
@@ -4520,8 +4570,23 @@ function prodAppliqueArticle(silencieux){
     const c = document.getElementById(cle);
     if(c && c.checked) ids.push(m.id);
   });
+  // Produit fini : celui qui recevra les pieces validees.
+  let fini = (document.getElementById('pa-fini')||{}).value || '';
+  if(fini === '__creer'){
+    const dejaLa = state.products.find(pp=>pp.name === nom);
+    if(dejaLa) fini = dejaLa.id;
+    else{
+      const cat = (state.categories||[]).find(c=>c.name !== 'Filament 3D');
+      const neuf = {id:uid(), name:nom, category:(cat?cat.name:'Autre'), supplier:'',
+                    supplierRef:'', price:0, threshold:0, unit:'piece', photo:null};
+      state.products.push(neuf);
+      fini = neuf.id;
+      if(!silencieux) toast('Produit fini cree dans le stock');
+    }
+  }
   const donnees = {
     nom,
+    produitFiniId: fini || null,
     filamentId: (document.getElementById('pa-fil')||{}).value || null,
     piecesParBobine: Math.max(1, parseInt((document.getElementById('pa-rend')||{}).value, 10) || 1),
     piecesParImpression: Math.max(1, parseInt((document.getElementById('pa-lot')||{}).value, 10) || 1),
