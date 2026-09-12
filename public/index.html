@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.14)
+  Gestion de stock — stock et production 3D  (v1.15)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.14]</title>
+<title>Gestion de stock [v1.15]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -258,6 +258,8 @@
   .prod-row{background:var(--panel);border:1px solid var(--border);border-radius:12px;
     padding:11px 13px;margin-bottom:9px;}
   .prod-row-nom{font-weight:600;font-size:14px;color:var(--ink);}
+  .cmd-etat{flex:none;width:14px;height:14px;border-radius:50%;display:block;
+    box-shadow:0 0 0 3px rgba(0,0,0,0.05);}
   .prod-row-sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px;line-height:1.45;}
   .prod-h{font-size:13px;font-weight:600;color:var(--ink-soft);margin:18px 0 8px 0;}
   .prod-note{font-size:11.5px;color:var(--ink-soft);line-height:1.5;margin:12px 0 0 0;}
@@ -431,7 +433,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.14</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.15</p>
   </div>
 </div>
 
@@ -441,7 +443,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.14</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.15</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1147,7 +1149,7 @@ function entrerDansApp(v){
     const p2 = document.getElementById('signup-pass2'); if(p2) p2.value='';
     const bn = document.getElementById('brand-name');
     if(bn && account) bn.textContent = account.nom || '';
-    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.14]';
+    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.15]';
     renderTabs();
     renderContent();
     setSyncStatus(window.__syncStatus || 'saved');
@@ -3648,15 +3650,24 @@ const BAMBU_COULEURS = ['Noir','Blanc','Gris','Beige','Rouge','Bordeaux','Orange
   'Vert','Vert fonc\u00e9','Bleu','Bleu Klein','Bleu ciel','Violet','Rose','Marron','Or','Argent','Cuivre','Transparent'];
 
 const JOURS = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+/* Un jour porte une liste de plages de présence, vide si personne n'est là. */
 const PLANNING_DEFAUT = {
-  0:{actif:false, de:'10:00', a:'18:00'},
-  1:{actif:true,  de:'09:00', a:'19:00'},
-  2:{actif:true,  de:'09:00', a:'19:00'},
-  3:{actif:true,  de:'09:00', a:'19:00'},
-  4:{actif:true,  de:'09:00', a:'19:00'},
-  5:{actif:true,  de:'09:00', a:'19:00'},
-  6:{actif:true,  de:'10:00', a:'18:00'}
+  0:[], 1:[{de:'09:00', a:'19:00'}], 2:[{de:'09:00', a:'19:00'}],
+  3:[{de:'09:00', a:'19:00'}], 4:[{de:'09:00', a:'19:00'}],
+  5:[{de:'09:00', a:'19:00'}], 6:[{de:'10:00', a:'18:00'}]
 };
+/* Ancien format : un objet {actif, de, a} par jour. On le convertit. */
+function prodNormalisePlanning(pl){
+  const out = {};
+  for(let j = 0; j <= 6; j++){
+    const v = pl ? pl[j] : null;
+    if(Array.isArray(v)) out[j] = v.filter(x=>x && x.de && x.a);
+    else if(v && v.actif && v.de && v.a) out[j] = [{de:v.de, a:v.a}];
+    else if(v) out[j] = [];
+    else out[j] = (PLANNING_DEFAUT[j] || []).map(x=>Object.assign({}, x));
+  }
+  return out;
+}
 
 function prodNum(v, def){ const n = Number(v); return isFinite(n) && n > 0 ? n : def; }
 function prodConf(){
@@ -3716,6 +3727,7 @@ function prodMigration(){
   if(!state.sites.length){
     state.sites.push({id:uid(), nom:"Atelier", planning:JSON.parse(JSON.stringify(PLANNING_DEFAUT)), exceptions:[]});
   }
+  state.sites.forEach(s=>{ s.planning = prodNormalisePlanning(s.planning); });
   const def = state.sites[0].id;
   (state.printers||[]).forEach(p=>{ if(!p.siteId || !prodLieu(p.siteId)) p.siteId = def; });
 }
@@ -3732,21 +3744,27 @@ function prodAt(iso, hhmm){
 function prodPlusJours(iso, n){
   const d = prodAt(iso, '12:00'); d.setDate(d.getDate() + n); return prodIso(d);
 }
-/* Créneau de présence d'un lieu pour une date donnée, ou null. */
-function prodCreneau(site, iso){
-  if(!site) return null;
-  const ex = (site.exceptions||[]).find(e=> iso >= e.du && iso <= (e.au || e.du));
-  if(ex) return (ex.ouvert && ex.de && ex.a) ? {de:ex.de, a:ex.a} : null;
-  const p = (site.planning || PLANNING_DEFAUT)[new Date(prodAt(iso,'12:00')).getDay()];
-  return (p && p.actif && p.de && p.a) ? {de:p.de, a:p.a} : null;
+/* Toutes les plages de présence d'un lieu à une date, triées. */
+function prodCreneaux(site, iso){
+  if(!site) return [];
+  const exs = (site.exceptions||[]).filter(e=> iso >= e.du && iso <= (e.au || e.du));
+  let l;
+  if(exs.length){
+    l = exs.filter(e=>e.ouvert && e.de && e.a).map(e=>({de:e.de, a:e.a}));
+  }else{
+    const pl = prodNormalisePlanning(site.planning);
+    l = (pl[new Date(prodAt(iso,'12:00')).getDay()] || []).slice();
+  }
+  return l.filter(x=>x.de && x.a && x.a > x.de).sort((x,y)=>x.de.localeCompare(y.de));
 }
+function prodCreneau(site, iso){ const l = prodCreneaux(site, iso); return l.length ? l[0] : null; }
 /* Premier instant de présence à partir de ts. null si rien dans l'année. */
 function prodProchainePresence(site, ts){
   let d = new Date(ts);
   for(let i = 0; i < 400; i++){
     const iso = prodIso(d);
-    const cr = prodCreneau(site, iso);
-    if(cr){
+    const crs = prodCreneaux(site, iso);
+    for(const cr of crs){
       const debut = prodAt(iso, cr.de), fin = prodAt(iso, cr.a);
       if(d < debut) return debut;
       if(d < fin) return new Date(d);
@@ -3757,6 +3775,57 @@ function prodProchainePresence(site, ts){
 }
 
 /* ---------------- La simulation ---------------- */
+/* Trois \u00e9tats : en production, produite mais pas partie, livr\u00e9e. */
+function prodEtatCommande(o){
+  if(o.livree) return {cle:'livree',    coul:'var(--green)', txt:'Livr\u00e9e'};
+  if(o.fait)   return {cle:'produite',  coul:'var(--amber)', txt:'Produite, pas encore livr\u00e9e'};
+  return              {cle:'production', coul:'var(--rust)',  txt:'En production'};
+}
+function prodPastille(o){
+  const e = prodEtatCommande(o);
+  return `<span class="cmd-etat" style="background:${e.coul};" title="${e.txt}"></span>`;
+}
+
+/* Livraison : les pi\u00e8ces quittent l'atelier, donc le stock. */
+async function prodLivre(orderId){
+  const o = (state.orders||[]).find(x=>x.id===orderId);
+  if(!o || o.livree) return;
+  let sorties = 0;
+  (o.lignes||[]).forEach(l=>{
+    const r = prodRecette(l.recipeId);
+    if(!r || !r.produitFiniId) return;
+    if(!state.products.some(pp=>pp.id === r.produitFiniId)) return;
+    const q = Number(l.qte) || 0;
+    if(q <= 0) return;
+    state.movements.push({id:uid(), productId:r.produitFiniId, type:'out', qty:q,
+      date:new Date().toISOString(), user:state.user || null, source:'livraison',
+      note:'Livraison ' + (o.client || 'commande')});
+    sorties += q;
+  });
+  o.livree = true; o.livreeLe = new Date().toISOString();
+  if(!o.fait) o.fait = true;
+  scheduleCloudSave(); setCloseHook(null); closeModal();
+  toast(sorties ? `Livr\u00e9e \u00b7 ${sorties} pi\u00e8ce${sorties>1?'s':''} sortie${sorties>1?'s':''} du stock` : 'Commande livr\u00e9e');
+  renderContent();
+}
+function prodAnnuleLivraison(orderId){
+  const o = (state.orders||[]).find(x=>x.id===orderId);
+  if(!o || !o.livree) return;
+  askConfirm('Annuler la livraison ? Les pi\u00e8ces reviennent en stock.', async ()=>{
+    (o.lignes||[]).forEach(l=>{
+      const r = prodRecette(l.recipeId);
+      if(!r || !r.produitFiniId) return;
+      const q = Number(l.qte) || 0;
+      if(q <= 0) return;
+      state.movements.push({id:uid(), productId:r.produitFiniId, type:'in', qty:q,
+        date:new Date().toISOString(), user:state.user || null, source:'livraison',
+        note:'Livraison annul\u00e9e'});
+    });
+    o.livree = false; o.livreeLe = null;
+    scheduleCloudSave(); closeModal(); toast('Livraison annul\u00e9e'); renderContent();
+  });
+}
+
 function prodCommandesEnCours(){
   return (state.orders||[]).filter(o=>!o.fait)
     .sort((a,b)=> String(a.dateLivraison||'').localeCompare(String(b.dateLivraison||'')));
@@ -4177,9 +4246,10 @@ function viewProdLieux(){
   prodMigration();
   const rows = (state.sites||[]).map(s=>{
     const n = (state.printers||[]).filter(p=>p.siteId===s.id).length;
+    const pl = prodNormalisePlanning(s.planning);
     const jours = [1,2,3,4,5,6,0].map(j=>{
-      const p = (s.planning||{})[j];
-      return (p && p.actif) ? `${JOURS[j].slice(0,3)} ${p.de}–${p.a}` : null;
+      const l = pl[j] || [];
+      return l.length ? `${JOURS[j].slice(0,3)} ${l.map(x=>x.de+'–'+x.a).join(', ')}` : null;
     }).filter(Boolean).join(' · ');
     return `<div class="prod-row" onclick="prodOpenLieu('${s.id}')">
       <div class="prod-row-nom">${esc(s.nom)}</div>
@@ -4192,24 +4262,16 @@ function viewProdLieux(){
 }
 function prodOpenLieu(id){
   const s = id ? prodLieu(id) : null;
-  const pl = (s && s.planning) || PLANNING_DEFAUT;
   window.__prodLieu = s ? s.id : null;
-  window.__prodExc = s ? (s.exceptions||[]).map(e=>Object.assign({}, e)) : [];
+  window.__prodExc  = s ? (s.exceptions||[]).map(e=>Object.assign({}, e)) : [];
+  window.__prodPlan = prodNormalisePlanning(s ? s.planning : null);
   openModal(`
     <h3>${s?'Modifier le lieu':'Nouveau lieu'}</h3>
     <div class="field"><label>Nom du lieu</label>
-      <input type="text" id="pl-nom" value="${s?esc(s.nom):''}" placeholder="Atelier Montmartre"></div>
-    <div class="field"><label>Présence sur place, semaine type</label>
-      ${[1,2,3,4,5,6,0].map(j=>{
-        const p = pl[j] || {actif:false, de:'09:00', a:'19:00'};
-        return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px;">
-          <input type="checkbox" id="pl-a-${j}" ${p.actif?'checked':''} style="flex:none;">
-          <label for="pl-a-${j}" style="margin:0;width:62px;flex:none;text-transform:none;font-weight:500;color:var(--ink-soft);">${JOURS[j]}</label>
-          <input type="time" id="pl-de-${j}" value="${p.de||'09:00'}" style="flex:1;min-width:0;">
-          <input type="time" id="pl-a2-${j}" value="${p.a||'19:00'}" style="flex:1;min-width:0;">
-        </div>`;
-      }).join('')}</div>
-    <div class="field"><label>Congés, salons, horaires exceptionnels</label>
+      <input type="text" id="pl-nom" value="${s?esc(s.nom):''}"></div>
+    <div class="field"><label>Pr\u00e9sence sur place, semaine type</label>
+      <div id="pl-plan"></div></div>
+    <div class="field"><label>Cong\u00e9s, salons, horaires exceptionnels</label>
       <div id="pl-exc"></div>
       <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="prodAjoutExc()">Ajouter une date</button></div>
     <div style="display:flex;gap:8px;margin-top:6px;">
@@ -4217,9 +4279,54 @@ function prodOpenLieu(id){
       ${s && (state.sites||[]).length>1?`<button class="btn btn-ghost" onclick="prodSupprLieu('${s.id}')">Supprimer</button>`:''}
     </div>
   `);
+  prodRenderPlan();
   prodRenderExc();
   setCloseHook(()=>prodAppliqueLieu(true));
 }
+
+/* Semaine type : autant de plages que l'on veut par jour. */
+function prodRenderPlan(){
+  const box = document.getElementById('pl-plan');
+  if(!box) return;
+  const P = window.__prodPlan || {};
+  box.innerHTML = [1,2,3,4,5,6,0].map(j=>{
+    const l = P[j] || [];
+    return `<div style="border-bottom:1px solid var(--border);padding:8px 0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${l.length?'6px':'0'};">
+        <span style="font-size:12.5px;font-weight:600;color:${l.length?'var(--ink)':'var(--ink-soft)'};">${JOURS[j]}</span>
+        <span style="display:flex;align-items:center;gap:8px;">
+          ${l.length?'':'<span style="font-size:11.5px;color:var(--ink-soft);">absent</span>'}
+          <button class="btn btn-outline btn-sm" style="padding:3px 10px;" onclick="prodAjoutPlage(${j})">+</button>
+        </span>
+      </div>
+      ${l.map((pl,i)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+        <input type="time" value="${esc(pl.de||'')}" style="flex:1;min-width:0;" onchange="prodMajPlage(${j},${i},'de',this.value)">
+        <input type="time" value="${esc(pl.a||'')}" style="flex:1;min-width:0;" onchange="prodMajPlage(${j},${i},'a',this.value)">
+        <button class="btn btn-ghost btn-sm" onclick="prodSupprPlage(${j},${i})">\u2715</button>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+function prodAjoutPlage(j){
+  const P = window.__prodPlan = window.__prodPlan || {};
+  const l = P[j] = P[j] || [];
+  const derniere = l[l.length-1];
+  if(derniere && (!derniere.de || !derniere.a)){
+    toast('Compl\u00e9tez la plage en cours avant d\'en ajouter une');
+    return;
+  }
+  l.push(l.length ? {de:'14:00', a:'18:00'} : {de:'09:00', a:'19:00'});
+  prodRenderPlan();
+}
+function prodMajPlage(j, i, champ, val){
+  const l = (window.__prodPlan||{})[j]; if(!l || !l[i]) return;
+  l[i][champ] = val;
+}
+function prodSupprPlage(j, i){
+  const l = (window.__prodPlan||{})[j]; if(!l) return;
+  l.splice(i, 1); prodRenderPlan();
+}
+
 function prodRenderExc(){
   const box = document.getElementById('pl-exc'); if(!box) return;
   const L = window.__prodExc || [];
@@ -4260,20 +4367,16 @@ function prodAppliqueLieu(silencieux){
   if(!champ) return false;
   const nom = champ.value.trim();
   if(!nom){ if(!silencieux) toast('Donnez un nom au lieu'); return false; }
+  const P = window.__prodPlan || {};
   const planning = {};
-  [0,1,2,3,4,5,6].forEach(j=>{
-    const a = document.getElementById('pl-a-'+j);
-    if(!a) return;
-    planning[j] = {actif:a.checked,
-      de:(document.getElementById('pl-de-'+j)||{}).value || '09:00',
-      a: (document.getElementById('pl-a2-'+j)||{}).value || '19:00'};
-  });
+  for(let j = 0; j <= 6; j++)
+    planning[j] = (P[j]||[]).filter(x=>x && x.de && x.a && x.a > x.de).map(x=>({de:x.de, a:x.a}));
   const exceptions = (window.__prodExc||[]).filter(e=>e.du);
   state.sites = state.sites || [];
   const ex = window.__prodLieu ? prodLieu(window.__prodLieu) : null;
   if(ex) Object.assign(ex, {nom, planning, exceptions});
   else state.sites.push({id:uid(), nom, planning, exceptions});
-  window.__prodLieu = null; window.__prodExc = [];
+  window.__prodLieu = null; window.__prodExc = []; window.__prodPlan = null;
   scheduleCloudSave();
   return true;
 }
@@ -4620,17 +4723,25 @@ function prodSupprArticle(id){
 
 /* ------------------------------ COMMANDES ------------------------------ */
 function viewProdCommandes(){
-  const l = (state.orders||[]).slice()
-    .sort((a,b)=> (a.fait?1:0)-(b.fait?1:0) || String(a.dateLivraison||'').localeCompare(String(b.dateLivraison||'')));
+  const ordre = {production:0, produite:1, livree:2};
+  const l = (state.orders||[]).slice().sort((a,b)=>
+    ordre[prodEtatCommande(a).cle] - ordre[prodEtatCommande(b).cle] ||
+    String(a.dateLivraison||'').localeCompare(String(b.dateLivraison||'')));
   const rows = l.length ? l.map(o=>{
     const n = (o.lignes||[]).reduce((t,x)=>t+(Number(x.qte)||0),0);
-    return `<div class="prod-row" style="${o.fait?'opacity:0.55;':''}" onclick="prodOpenCommande('${o.id}')">
-      <div class="prod-row-nom">${esc(o.client||'Sans client')}</div>
-      <div class="prod-row-sub">À livrer le ${fmtDate(o.dateLivraison)} · ${n} pièce${n>1?'s':''}${o.fait?' · fabriquée':''}</div>
+    const e = prodEtatCommande(o);
+    return `<div class="prod-row" style="${o.livree?'opacity:0.6;':''}display:flex;align-items:center;gap:10px;" onclick="prodOpenCommande('${o.id}')">
+      <div style="flex:1;min-width:0;">
+        <div class="prod-row-nom">${esc(o.client||'Sans client')}</div>
+        <div class="prod-row-sub">\u00c0 livrer le ${fmtDate(o.dateLivraison)} \u00b7 ${n} pi\u00e8ce${n>1?'s':''}</div>
+        <div class="prod-row-sub" style="color:${e.coul};font-weight:600;">${e.txt}</div>
+      </div>
+      ${prodPastille(o)}
     </div>`;
-  }).join('') : `<div class="empty">Aucune commande. C'est à partir d'elles que tout le planning se calcule.</div>`;
+  }).join('') : `<div class="empty">Aucune commande. C'est \u00e0 partir d'elles que tout le planning se calcule.</div>`;
   return `<button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:12px;" onclick="prodOpenCommande()">Nouvelle commande</button>${rows}`;
 }
+
 function prodOpenCommande(id){
   const o = id ? (state.orders||[]).find(x=>x.id===id) : null;
   window.__prodCmd = o ? o.id : null;
@@ -4647,7 +4758,11 @@ function prodOpenCommande(id){
       <input type="text" id="pc-note" value="${o?esc(o.note||''):''}" placeholder="Coloris, finition, contact…"></div>
     ${o?`<div class="checkline"><input type="checkbox" id="pc-fait" ${o.fait?'checked':''}>
       <label for="pc-fait" style="margin:0;text-transform:none;font-weight:500;color:var(--ink-soft);">Commande fabriquée</label></div>`:''}
-    <div style="display:flex;gap:8px;margin-top:6px;">
+    ${o?`<div style="margin-top:4px;">${o.livree
+      ? `<button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="prodAnnuleLivraison('${o.id}')">Annuler la livraison</button>`
+      : `<button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="prodLivre('${o.id}')">Marquer comme livr\u00e9e</button>
+         <p class="prod-note">Les pi\u00e8ces de cette commande sortiront du stock.</p>`}</div>`:''}
+    <div style="display:flex;gap:8px;margin-top:10px;">
       <button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodSaveCommande()">Enregistrer</button>
       ${o?`<button class="btn btn-ghost" onclick="prodSupprCommande('${o.id}')">Supprimer</button>`:''}
     </div>
@@ -4702,7 +4817,8 @@ function prodAppliqueCommande(silencieux){
   };
   state.orders = state.orders || [];
   const ex = window.__prodCmd ? state.orders.find(o=>o.id===window.__prodCmd) : null;
-  if(ex) Object.assign(ex, d); else state.orders.push(Object.assign({id:uid()}, d));
+  if(ex){ const garde = {livree:ex.livree, livreeLe:ex.livreeLe}; Object.assign(ex, d, garde); }
+  else state.orders.push(Object.assign({id:uid()}, d));
   window.__prodCmd = null; window.__prodLignes = [];
   scheduleCloudSave();
   return true;
