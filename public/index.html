@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.8)
+  Gestion de stock — stock et production 3D  (v1.9)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.8]</title>
+<title>Gestion de stock [v1.9]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -385,15 +385,6 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
         <label>Confirmer le mot de passe</label>
         <input type="password" id="signup-pass2" autocomplete="new-password" placeholder="Retapez le mot de passe">
       </div>
-      <div class="field" id="f-code" style="text-align:left;display:none;">
-        <label>Code d'inscription</label>
-        <input type="text" id="signup-code" autocapitalize="none" placeholder="Code fourni par l'administrateur">
-      </div>
-    </div>
-
-    <div class="field" style="text-align:left;">
-      <label>Vos initiales</label>
-      <input type="text" id="login-input" name="initiales" autocomplete="off" placeholder="ex. C.M." maxlength="24">
     </div>
 
     <label id="souvenir-ligne" style="display:flex;align-items:center;gap:8px;text-align:left;margin:2px 0 12px 0;font-size:12.5px;cursor:pointer;">
@@ -419,7 +410,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.8</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.9</p>
   </div>
 </div>
 
@@ -429,7 +420,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.8</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.9</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -485,16 +476,7 @@ const TABLE = "comptes_stock";   // nom de la table créée par le script SQL
    Les données restent totalement cloisonnées : un nouveau compte
    démarre avec un stock vide et ne voit jamais ceux des autres.
 
-   CODE_INSCRIPTION : mot de passe d'entrée demandé à la création
-   d'un compte. Il évite que n'importe quel visiteur tombé sur
-   l'adresse ne crée un compte au hasard.
-   - laissez la valeur pour exiger ce code (recommandé)
-   - mettez "" pour ouvrir l'inscription à tout le monde
-   Ce code se vérifie dans le navigateur : c'est un garde-fou contre
-   les créations parasites, pas une protection des données. Ce qui
-   protège les données, c'est la Row Level Security de la base.
-   --------------------------------------------------------------- */
-const CODE_INSCRIPTION = "mahd2026";
+*/
 
 /* Où conserver la session ouverte ?
    - "Rester connecté" coché  : dans localStorage, la session survit à la
@@ -957,7 +939,6 @@ function setAuthMode(m){
   const aff = (id, on) => { const e = document.getElementById(id); if(e) e.style.display = on ? 'block' : 'none'; };
   aff('f-cabinet', inscription);
   aff('f-pass2',   inscription);
-  aff('f-code',    inscription && !!CODE_INSCRIPTION);
   const pass = document.getElementById('login-pass');
   if(pass){
     pass.setAttribute('autocomplete', inscription ? 'new-password' : 'current-password');
@@ -967,7 +948,7 @@ function setAuthMode(m){
   if(btn) btn.textContent = inscription ? 'Créer le compte' : 'Entrer';
   const sub = document.getElementById('login-sub');
   if(sub) sub.textContent = inscription
-    ? "Créez le compte de votre atelier. Le stock démarre vide, et vous êtes seuls à le voir."
+    ? "Créez le compte de votre atelier. Le stock démarre vide, et vous seuls y avez accès."
     : "Connectez-vous pour ouvrir le stock de votre atelier.";
   const fg = document.getElementById('forgot-switch');
   if(fg) fg.style.display = inscription ? 'none' : 'block';
@@ -993,7 +974,7 @@ function showAuthFields(show){
   const fg = document.getElementById('forgot-switch');
   if(fg) fg.style.display = show ? 'block' : 'none';
   if(show){ setAuthMode('login'); }
-  else if(sub){ sub.textContent = "Indiquez vos initiales pour tracer vos actions dans l'historique."; }
+  else if(sub){ sub.textContent = "Reprise de la session en cours…"; }
   if(title && account && account.nom) title.textContent = account.nom;
 }
 /* Récupère la session Supabase enregistrée sur l'appareil, s'il y en a une. */
@@ -1009,14 +990,6 @@ async function restoreSession(){
   }catch(e){ return false; }
 }
 async function initApp(){
-  // Initiales déjà utilisées sur cet appareil
-  try{
-    let saved = null;
-    try{ if(window.localStorage) saved = localStorage.getItem('stock_lastuser'); }catch(e){}
-    if(!saved){ try{ const last = await safeGet('stock_lastuser', false); if(last) saved = last.value; }catch(e){} }
-    if(saved) document.getElementById('login-input').value = saved;
-  }catch(e){}
-
   if(!cloudReady()){
     showAuthFields(true);
     loginMsg("Base de données non reliée. Renseignez l'URL et la clé Supabase dans index.html.");
@@ -1031,6 +1004,7 @@ async function initApp(){
   showAuthFields(!hasSession);
   if(hasSession){
     try{ await loadAll(); }catch(e){ console.warn('Chargement initial partiel', e); }
+    entrerDansApp(nomUtilisateur());
   }
 }
 /* ---------------- Mot de passe oublié ----------------
@@ -1133,6 +1107,14 @@ function messageAuth(e){
   return m;
 }
 
+/* Qui signe les mouvements dans l'historique. Il n'y a plus de saisie
+   d'initiales : c'est le compte lui-même qui fait office d'identité. */
+function nomUtilisateur(){
+  if(account && account.nom)   return account.nom;
+  if(account && account.email) return String(account.email).split('@')[0];
+  return 'Atelier';
+}
+
 /* Ouvre l'application une fois le compte établi. */
 function entrerDansApp(v){
   state.user = v;
@@ -1144,32 +1126,26 @@ function entrerDansApp(v){
     const p2 = document.getElementById('signup-pass2'); if(p2) p2.value='';
     const bn = document.getElementById('brand-name');
     if(bn && account) bn.textContent = account.nom || '';
-    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.8]';
+    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.9]';
     renderTabs();
     renderContent();
     setSyncStatus(window.__syncStatus || 'saved');
   }catch(e){ console.warn('Erreur d\'affichage', e); }
-  try{ if(window.localStorage) localStorage.setItem('stock_lastuser', v); }catch(e){}
-  withTimeout(window.storage.set('stock_lastuser', v, false), 3000).catch(()=>{});
 }
 
 /* Création d'un nouveau compte entreprise. */
 async function doSignup(){
   if(!cloudReady()){ loginMsg("Application non configurée (Supabase)."); return; }
   const val = id => (document.getElementById(id) ? document.getElementById(id).value : '');
-  const initiales = val('login-input').trim();
   const entreprise = val('signup-cabinet').trim();
   const email     = val('login-email').trim();
   const pass      = val('login-pass');
   const pass2     = val('signup-pass2');
-  const code      = val('signup-code').trim();
 
   if(!entreprise){ loginMsg("Indiquez le nom de l'entreprise"); return; }
   if(!email || email.indexOf('@') === -1){ loginMsg("Adresse e-mail invalide"); return; }
   if(pass.length < 8){ loginMsg("Mot de passe : 8 caractères minimum"); return; }
   if(pass !== pass2){ loginMsg("Les deux mots de passe ne correspondent pas"); return; }
-  if(CODE_INSCRIPTION && code !== CODE_INSCRIPTION){ loginMsg("Code d'inscription incorrect"); return; }
-  if(!initiales){ loginMsg("Indiquez aussi vos initiales"); return; }
   const souvenirIns = document.getElementById('login-souvenir');
   try{ localStorage.setItem(CLE_SOUVENIR, (souvenirIns && !souvenirIns.checked) ? '0' : '1'); }catch(e){}
 
@@ -1188,7 +1164,7 @@ async function doSignup(){
       await loadAll();
       if(btn){ btn.disabled = false; btn.textContent = 'Entrer'; }
       authMode = 'login';
-      entrerDansApp(initiales);
+      entrerDansApp(nomUtilisateur());
       toast("Compte créé. Bienvenue !");
       return;
     }
@@ -1203,9 +1179,6 @@ async function doSignup(){
 }
 
 async function doLogin(){
-  const inputEl = document.getElementById('login-input');
-  const v = (inputEl ? inputEl.value : '').trim();
-  if(!v){ loginMsg("Merci d'indiquer un nom ou des initiales"); return; }
   if(!cloudReady()){ loginMsg("Application non configurée (Supabase)."); return; }
 
   const btn = document.getElementById('login-btn');
@@ -1235,7 +1208,7 @@ async function doLogin(){
     }
     if(btn){ btn.disabled = false; btn.textContent = 'Entrer'; }
   }
-  entrerDansApp(v);
+  entrerDansApp(nomUtilisateur());
 }
 /* Menu du profil : tout ce qui concerne l'utilisateur et le compte est
    regroupé ici, pour ne garder qu'un seul bouton dans la barre du haut. */
@@ -1246,17 +1219,13 @@ function openProfilMenu(){
       <div style="width:44px;height:44px;border-radius:999px;background:var(--teal);color:#fff;
                   display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex:none;">${esc(ini)}</div>
       <div style="min-width:0;">
-        <div style="font-weight:600;font-size:15px;">${esc(state.user||'—')}</div>
+        <div style="font-weight:600;font-size:15px;">${esc(account ? (account.nom || '—') : '—')}</div>
         <div style="font-size:12px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;">
-          ${esc(account ? (account.nom || account.email) : '—')}
+          ${esc(account ? account.email : '—')}
         </div>
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:9px;">
-      <button class="menu-ligne" onclick="menuChangerUtilisateur()">
-        <span class="ic">👤</span>
-        <span>Changer d'utilisateur<span class="sous">Garder l'entreprise, saisir d'autres initiales</span></span>
-      </button>
       <button class="menu-ligne" onclick="menuChangerCompte()">
         <span class="ic">🔁</span>
         <span>Changer de compte<span class="sous">Ouvrir le stock d'une autre entreprise</span></span>
@@ -1268,7 +1237,6 @@ function openProfilMenu(){
     </div>
   `);
 }
-function menuChangerUtilisateur(){ closeModal(); logout(); }
 function menuChangerCompte(){
   closeModal();
   askConfirm("Changer de compte ? Les données de cette entreprise restent enregistrées sur le serveur.", async ()=>{
@@ -1284,19 +1252,9 @@ function menuDeconnexion(){
     closeModal();
     try{ if(window.localStorage) localStorage.removeItem('stock_lastuser'); }catch(e){}
     await forgetAccount();
-    const ch = document.getElementById('login-input');
-    if(ch) ch.value = '';
   });
 }
 
-/* Changer d'utilisateur (initiales) — le compte de l'entreprise reste connecté. */
-function logout(){
-  state.user=null;
-  document.getElementById('app').style.display='none';
-  document.getElementById('login-overlay').style.display='flex';
-  showAuthFields(!account);
-  loginMsg('');
-}
 /* Quitter complètement le compte : déconnexion serveur + effacement local. */
 function signOutAccount(){
   askConfirm("Se déconnecter de ce compte sur cet appareil ? Les données restent enregistrées sur le serveur.", async ()=>{
