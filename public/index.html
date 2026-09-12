@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.11)
+  Gestion de stock — stock et production 3D  (v1.13)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.11]</title>
+<title>Gestion de stock [v1.13]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -261,6 +261,24 @@
   .prod-row-sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px;line-height:1.45;}
   .prod-h{font-size:13px;font-weight:600;color:var(--ink-soft);margin:18px 0 8px 0;}
   .prod-note{font-size:11.5px;color:var(--ink-soft);line-height:1.5;margin:12px 0 0 0;}
+  .rp-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);
+    border-radius:12px;background:var(--panel);}
+  table.rp{border-collapse:collapse;font-size:11px;}
+  table.rp th,table.rp td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);
+    padding:4px;vertical-align:top;min-width:88px;}
+  table.rp thead th{position:sticky;top:0;background:var(--bg);font-weight:500;
+    color:var(--ink-soft);text-align:center;line-height:1.25;padding:6px 4px;z-index:2;}
+  table.rp th.rp-mac{position:sticky;left:0;background:var(--panel);text-align:left;
+    font-weight:600;color:var(--ink);min-width:112px;max-width:112px;z-index:3;font-size:11.5px;}
+  table.rp thead th.rp-mac{z-index:4;background:var(--bg);}
+  table.rp .rp-auj{background:var(--teal-pale);}
+  .rp-chip{border-radius:7px;padding:4px 6px;margin-bottom:4px;line-height:1.3;
+    font-size:10.5px;word-break:break-word;}
+  .rp-chip span{display:block;font-size:9.5px;opacity:.75;}
+  .rp-todo{background:var(--teal);color:#fff;cursor:pointer;}
+  .rp-ok{background:transparent;color:var(--ink-soft);border:1px dashed var(--border);opacity:.65;}
+  .rp-ko{background:transparent;color:var(--rust);border:1px dashed var(--rust);opacity:.7;
+    text-decoration:line-through;}
   .toast{
     position:fixed;bottom:46px;left:50%;transform:translateX(-50%);background:var(--teal-dark);color:#fff;
     padding:10px 18px;border-radius:999px;font-size:13.5px;z-index:300;box-shadow:0 6px 20px rgba(0,0,0,0.25);
@@ -410,7 +428,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.11</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.13</p>
   </div>
 </div>
 
@@ -420,7 +438,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.11</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.13</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1126,7 +1144,7 @@ function entrerDansApp(v){
     const p2 = document.getElementById('signup-pass2'); if(p2) p2.value='';
     const bn = document.getElementById('brand-name');
     if(bn && account) bn.textContent = account.nom || '';
-    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.11]';
+    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.13]';
     renderTabs();
     renderContent();
     setSyncStatus(window.__syncStatus || 'saved');
@@ -1283,10 +1301,10 @@ async function forgetAccount(){
 const TABS = [
   {id:'accueil', label:'Accueil', icon:'M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1v-8z'},
   {id:'stock', label:'Stock', icon:'M4 7h16M4 12h16M4 17h10'},
+  {id:'production', label:'Production', icon:'M5 8h14v11H5V8zm3-4h8v4H8V4zm1 8h6m-6 3h4'},
   {id:'arrivee', label:'Arrivée', icon:'M12 4v12m0 0l-5-5m5 5l5-5M5 20h14'},
   {id:'sortie', label:'Sortie', icon:'M12 20V8m0 0l-5 5m5-5l5 5M5 4h14'},
   {id:'produit', label:'Produit', icon:'M4 7l8-4 8 4v10l-8 4-8-4V7z'},
-  {id:'production', label:'Production', icon:'M5 8h14v11H5V8zm3-4h8v4H8V4zm1 8h6m-6 3h4'},
   {id:'finance', label:'Finance', icon:'M4 19h16M7 19V9m5 10V5m5 14v-7'},
   {id:'historique', label:'Historique', icon:'M12 8v5l3 2M4 12a8 8 0 1 1 3 6.3'},
   {id:'export', label:'Export', icon:'M12 3v12m0 0l-4-4m4 4l4-4M5 21h14'},
@@ -1538,6 +1556,9 @@ function viewAccueil(){
         sousSeuil.length ? `article${sousSeuil.length>1?'s':''} à commander`
                          : `produit${state.products.length>1?'s':''} · tout est au-dessus du seuil`,
         {alerte: sousSeuil.length>0})}
+
+    ${tuile('production','Production','M5 8h14v11H5V8zm3-4h8v4H8V4zm1 8h6m-6 3h4',
+        prodTuileNombre(), prodTuileTexte(), {alerte: prodTuileAlerte()})}
 
     ${tuile('sortie','Sortie','M12 20V8m0 0l-5 5m5-5l5 5M5 4h14',
         sorties, `sortie${sorties>1?'s':''} ces 7 jours`)}
@@ -3597,6 +3618,20 @@ function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&am
 
 const BAMBU_MODELES = ['Bambu A1 mini','Bambu A1','Bambu P1P','Bambu P1S',
                        'Bambu X1C','Bambu X1E','Bambu H2D','Autre'];
+/* Gamme Bambu Lab, regroup\u00e9e par famille. Point de d\u00e9part modifiable :
+   le catalogue du fabricant \u00e9volue r\u00e9guli\u00e8rement. */
+const BAMBU_FILAMENTS = {
+  'PLA': ['PLA Basic','PLA Matte','PLA Silk+','PLA Lite','PLA Basic Gradient','PLA Glow',
+          'PLA Wood','PLA Marble','PLA Galaxy','PLA Sparkle','PLA Metal','PLA Aero','PLA-CF'],
+  'PETG': ['PETG Basic','PETG HF','PETG Translucent','PETG-CF'],
+  'ABS et ASA': ['ABS','ABS-GF','ASA','ASA-CF','ASA Aero'],
+  'TPU souple': ['TPU 95A HF','TPU 90A','TPU 85A','TPU pour AMS'],
+  'Technique': ['PC','PC FR','PA6-CF','PA6-GF','PAHT-CF','PET-CF','PPA-CF','PPS-CF'],
+  'Support': ['PVA','Support pour PLA/PETG','Support W','Support G']
+};
+const BAMBU_COULEURS = ['Noir','Blanc','Gris','Beige','Rouge','Bordeaux','Orange','Jaune',
+  'Vert','Vert fonc\u00e9','Bleu','Bleu Klein','Bleu ciel','Violet','Rose','Marron','Or','Argent','Cuivre','Transparent'];
+
 const JOURS = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
 const PLANNING_DEFAUT = {
   0:{actif:false, de:'10:00', a:'18:00'},
@@ -3632,6 +3667,30 @@ function prodManip(r){
   return v > 0 ? v : prodConf().manipulation;
 }
 function prodRecette(id){ return (state.recipes||[]).find(r=>r.id===id) || null; }
+
+/* Durée saisie dans une seule case, au pavé numérique.
+   On tape les chiffres à la suite : 430 donne 4 h 30, 45 donne 45 min. */
+function prodDureeSaisie(el){
+  const d = String(el.value||'').replace(/\D/g,'').slice(-4);
+  el.dataset.raw = d;
+  if(!d){ el.value = ''; return; }
+  if(d.length <= 2){ el.value = d + ' min'; return; }
+  el.value = parseInt(d.slice(0,-2),10) + ' h ' + d.slice(-2);
+}
+function prodDureeLue(id){
+  const el = document.getElementById(id);
+  const d = el ? String(el.dataset.raw||'') : '';
+  if(!d) return 0;
+  if(d.length <= 2) return parseInt(d,10) || 0;
+  return (parseInt(d.slice(0,-2),10)||0) * 60 + (parseInt(d.slice(-2),10)||0);
+}
+function prodDureeInit(min){
+  const m = Math.max(0, Math.round(Number(min)||0));
+  if(!m) return {raw:'', txt:''};
+  const h = Math.floor(m/60), r = m%60;
+  if(!h) return {raw:String(r), txt:r + ' min'};
+  return {raw:String(h) + String(r).padStart(2,'0'), txt:h + ' h ' + String(r).padStart(2,'0')};
+}
 function prodImprimante(id){ return (state.printers||[]).find(p=>p.id===id) || null; }
 function prodMachines(){ return (state.printers||[]).filter(p=>p.actif !== false); }
 function prodLieu(id){ return (state.sites||[]).find(s=>s.id===id) || (state.sites||[])[0] || null; }
@@ -3971,35 +4030,83 @@ function viewProdPlanning(){
    calcul sur ce qui reste. Une impression ratée est remise dans la file. */
 function viewProdSuivi(){
   const p = prodPlanning();
-  const jobs = (p.sim.jobs||[]).filter(j=>!j.virtuelle).slice(0, 25);
-  const runs = (state.runs||[]).slice(-6).reverse();
+  const machines = prodMachines();
+  if(!machines.length)
+    return `<div class="empty">Aucune imprimante en service. Ajoutez vos machines pour voir le r\u00e9tro-planning.</div>`;
 
-  const hist = runs.length ? `
-    <h3 class="prod-h">Dernières validations</h3>
-    ${runs.map(r=>{
-      const rec = prodRecette(r.recipeId), mac = prodImprimante(r.printerId);
-      return `<div class="prod-row" style="border-left:3px solid ${r.statut==='fait'?'var(--green)':'var(--rust)'};padding:8px 12px;">
-        <div class="prod-row-sub">${r.statut==='fait'?`${r.pieces} × `:'Ratée : '}${rec?esc(rec.nom):'article supprimé'}${mac?` · ${esc(mac.nom)}`:''} · ${fmtDateHeure(r.at)}${r.user?` · ${esc(r.user)}`:''}</div>
-      </div>`;
-    }).join('')}
-    <button class="btn btn-outline btn-sm" style="margin-top:4px;" onclick="prodAnnuleDerniere()">Annuler la dernière</button>` : '';
+  const jobs = (p.sim.jobs||[]).filter(j=>!j.virtuelle);
+  const runs = (state.runs||[]).filter(r=>r.at);
 
-  if(!jobs.length)
-    return `<div class="empty">Rien à imprimer pour le moment.</div>${hist}`;
+  // Colonnes : d'une semaine en arri\u00e8re jusqu'au dernier travail pr\u00e9vu.
+  const jour = 86400000;
+  const auj = prodAt(todayISO(), '12:00');
+  let debut = new Date(auj.getTime() - 6*jour), fin = new Date(auj.getTime() + 2*jour);
+  runs.forEach(r=>{ const d = new Date(r.at); if(d < debut) debut = new Date(d.getTime()); });
+  jobs.forEach(j=>{ if(j.depart > fin) fin = new Date(j.depart.getTime()); });
+  if(debut < new Date(auj.getTime() - 30*jour)) debut = new Date(auj.getTime() - 30*jour);
+  if(fin > new Date(auj.getTime() + 60*jour)) fin = new Date(auj.getTime() + 60*jour);
 
-  const rows = jobs.map(j=>`
-    <div class="prod-row">
-      <div class="prod-row-nom">${esc(j.article)}${j.pieces>1?` × ${j.pieces}`:''}</div>
-      <div class="prod-row-sub">${esc(j.machine)} · ${esc(j.client||'sans client')}</div>
-      <div class="prod-row-sub">Fin d'impression prévue ${fmtDateHeure(j.finImp.toISOString())}, plateau à vider ${fmtDateHeure(j.vidage.toISOString())}</div>
-      <div style="display:flex;gap:8px;margin-top:8px;">
-        <button class="btn btn-primary btn-sm" onclick="prodValide('${j.orderId}','${j.recipeId}','${j.printerId}',${j.pieces},true)">Imprimée</button>
-        <button class="btn btn-ghost btn-sm" onclick="prodValide('${j.orderId}','${j.recipeId}','${j.printerId}',${j.pieces},false)">Ratée</button>
-      </div>
-    </div>`).join('');
+  const cols = [];
+  for(let d = new Date(debut.getTime()); d <= fin && cols.length < 70; d = new Date(d.getTime() + jour))
+    cols.push(prodIso(d));
 
-  return `<p class="prod-note" style="margin:0 0 12px 0;">Validez chaque impression en sortant le plateau. Le planning se recalcule aussitôt sur ce qui reste à faire.</p>${rows}${hist}`;
+  const aujIso = todayISO();
+  const cellules = {};   // printerId|date -> [chips]
+  const pousse = (mid, iso, html)=>{
+    const k = mid + '|' + iso;
+    (cellules[k] = cellules[k] || []).push(html);
+  };
+
+  runs.forEach(r=>{
+    const iso = prodIso(new Date(r.at));
+    const rec = prodRecette(r.recipeId);
+    const ok = r.statut === 'fait';
+    pousse(r.printerId, iso,
+      `<div class="rp-chip ${ok?'rp-ok':'rp-ko'}" title="${esc(rec?rec.nom:'')}">
+         <span>${ok?'\u2713':'\u2715'}</span> ${esc(rec?rec.nom:'Article supprim\u00e9')}</div>`);
+  });
+
+  jobs.forEach((j,i)=>{
+    const iso = prodIso(j.depart);
+    const hh = String(j.depart.getHours()).padStart(2,'0') + ':' + String(j.depart.getMinutes()).padStart(2,'0');
+    pousse(j.printerId, iso,
+      `<div class="rp-chip rp-todo" onclick="prodChoixPiece('${j.orderId}','${j.recipeId}','${j.printerId}',${j.pieces})">
+         <span>${hh}</span> ${esc(j.article)}${j.pieces>1?` \u00d7${j.pieces}`:''}</div>`);
+  });
+
+  const enTetes = cols.map(iso=>{
+    const d = prodAt(iso,'12:00');
+    const jr = ['dim','lun','mar','mer','jeu','ven','sam'][d.getDay()];
+    return `<th class="${iso===aujIso?'rp-auj':''}">${jr}<br><b>${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</b></th>`;
+  }).join('');
+
+  const lignes = machines.map(m=>`
+    <tr><th class="rp-mac">${esc(m.nom)}</th>
+      ${cols.map(iso=>`<td class="${iso===aujIso?'rp-auj':''}">${(cellules[m.id+'|'+iso]||[]).join('')}</td>`).join('')}
+    </tr>`).join('');
+
+  return `
+    <p class="prod-note" style="margin:0 0 10px 0;">Une ligne par machine, une colonne par jour. Touchez une pi\u00e8ce pr\u00e9vue pour la valider ou la d\u00e9clarer rat\u00e9e : une pi\u00e8ce valid\u00e9e passe en discret, une rat\u00e9e est automatiquement replanifi\u00e9e.</p>
+    <div class="rp-wrap"><table class="rp"><thead><tr><th class="rp-mac"></th>${enTetes}</tr></thead>
+      <tbody>${lignes}</tbody></table></div>
+    ${runs.length?`<button class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="prodAnnuleDerniere()">Annuler la derni\u00e8re validation</button>`:''}`;
 }
+
+/* Choix propos\u00e9 quand on touche une pi\u00e8ce du r\u00e9tro-planning. */
+function prodChoixPiece(orderId, recipeId, printerId, pieces){
+  const r = prodRecette(recipeId), m = prodImprimante(printerId);
+  const o = (state.orders||[]).find(x=>x.id===orderId);
+  openModal(`
+    <h3>${esc(r?r.nom:'Pi\u00e8ce')}</h3>
+    <p class="prod-note" style="margin:0 0 14px 0;">${esc(m?m.nom:'')}${o&&o.client?' \u00b7 '+esc(o.client):''}${pieces>1?` \u00b7 ${pieces} pi\u00e8ces`:''}</p>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:8px;"
+      onclick="prodValide('${orderId}','${recipeId}','${printerId}',${pieces},true)">Valid\u00e9e, contr\u00f4l\u00e9e</button>
+    <button class="btn btn-outline" style="width:100%;justify-content:center;"
+      onclick="prodValide('${orderId}','${recipeId}','${printerId}',${pieces},false)">Rat\u00e9e, \u00e0 refaire</button>
+    <p class="prod-note">Une pi\u00e8ce rat\u00e9e retourne dans la file et sera replanifi\u00e9e.</p>
+  `);
+}
+
 async function prodValide(orderId, recipeId, printerId, pieces, ok){
   state.runs = state.runs || [];
   state.runs.push({id:uid(), orderId, recipeId, printerId,
@@ -4070,6 +4177,7 @@ function prodOpenLieu(id){
     </div>
   `);
   prodRenderExc();
+  setCloseHook(()=>prodAppliqueLieu(true));
 }
 function prodRenderExc(){
   const box = document.getElementById('pl-exc'); if(!box) return;
@@ -4106,16 +4214,18 @@ function prodMajExc(i, champ, val){
   if(champ === 'ouvert') prodRenderExc();
 }
 function prodSupprExc(i){ (window.__prodExc||[]).splice(i,1); prodRenderExc(); }
-async function prodSaveLieu(){
-  const nom = document.getElementById('pl-nom').value.trim();
-  if(!nom){ toast('Donnez un nom au lieu'); return; }
+function prodAppliqueLieu(silencieux){
+  const champ = document.getElementById('pl-nom');
+  if(!champ) return false;
+  const nom = champ.value.trim();
+  if(!nom){ if(!silencieux) toast('Donnez un nom au lieu'); return false; }
   const planning = {};
   [0,1,2,3,4,5,6].forEach(j=>{
-    planning[j] = {
-      actif: document.getElementById('pl-a-'+j).checked,
-      de: document.getElementById('pl-de-'+j).value || '09:00',
-      a:  document.getElementById('pl-a2-'+j).value || '19:00'
-    };
+    const a = document.getElementById('pl-a-'+j);
+    if(!a) return;
+    planning[j] = {actif:a.checked,
+      de:(document.getElementById('pl-de-'+j)||{}).value || '09:00',
+      a: (document.getElementById('pl-a2-'+j)||{}).value || '19:00'};
   });
   const exceptions = (window.__prodExc||[]).filter(e=>e.du);
   state.sites = state.sites || [];
@@ -4123,8 +4233,15 @@ async function prodSaveLieu(){
   if(ex) Object.assign(ex, {nom, planning, exceptions});
   else state.sites.push({id:uid(), nom, planning, exceptions});
   window.__prodLieu = null; window.__prodExc = [];
-  scheduleCloudSave(); closeModal(); toast('Lieu enregistré'); renderContent();
+  scheduleCloudSave();
+  return true;
 }
+async function prodSaveLieu(){
+  if(!prodAppliqueLieu(false)) return;
+  setCloseHook(null);
+  closeModal(); toast('Lieu enregistr\u00e9'); renderContent();
+}
+
 function prodSupprLieu(id){
   setCloseHook(null); window.__prodLieu = null;
   askConfirm("Supprimer ce lieu ? Ses imprimantes seront rattachées au premier lieu restant.", async ()=>{
@@ -4163,7 +4280,7 @@ function prodOpenMachine(){
     <div class="field"><label>Modèle</label>
       <select id="pm-modele">${BAMBU_MODELES.map(m=>`<option>${m}</option>`).join('')}</select></div>
     <div class="field"><label>Combien de machines de ce modèle</label>
-      <input type="text" id="pm-nb" inputmode="numeric" pattern="[0-9]*" value="1" placeholder="1"></div>
+      <input type="text" id="pm-nb" inputmode="numeric" pattern="[0-9]*" value="1"></div>
     <div class="field"><label>Lieu de production</label>
       <select id="pm-lieu">${prodLieuOptions(null)}</select></div>
     <p class="prod-note">Elles prendront les horaires de présence du lieu et seront nommées automatiquement.</p>
@@ -4234,70 +4351,199 @@ function viewProdArticles(){
       <div class="prod-row-sub">${prodDuree(r.minutesPiece)} par impression${pp>1?`, ${pp} pièces à la fois`:''} · ${prodManip(r)} min de manipulation · ${m?`${m} imprimante${m>1?'s':''}`:'aucune imprimante'}</div>
     </div>`;
   }).join('') : `<div class="empty">Aucun article. Un article, c'est la recette d'impression d'une pièce : sa bobine, son rendement, sa durée.</div>`;
-  return `<button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:12px;" onclick="prodOpenArticle()">Nouvel article</button>${rows}`;
+  return `<div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodOpenArticle()">Nouvel article</button>
+      <button class="btn btn-outline" style="flex:1;justify-content:center;" onclick="prodOpenBobine()">Nouvelle bobine</button>
+    </div>${rows}`;
 }
 function prodOpenArticle(id){
   prodMigration();
   const r = id ? prodRecette(id) : null;
-  const bobines = state.products.slice().sort((a,b)=>{
-    const fa = a.category==='Filament 3D'?0:1, fb = b.category==='Filament 3D'?0:1;
-    return fa-fb || String(a.name).localeCompare(String(b.name));
+  const bobines = state.products.filter(p=>p.category === 'Filament 3D')
+    .sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  const autres = state.products.filter(p=>p.category !== 'Filament 3D')
+    .sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  const d = prodDureeInit(r && r.minutesPiece);
+  const manip = prodDureeInit(r && r.manipMinutes);
+
+  // Les imprimantes sont propos\u00e9es par mod\u00e8le, pas une par une.
+  const modeles = {};
+  (state.printers||[]).forEach(m=>{
+    const cle = m.modele || 'Sans mod\u00e8le';
+    (modeles[cle] = modeles[cle] || []).push(m);
   });
-  const mins = Number(r && r.minutesPiece) || 0;
+  const choisis = (r && r.printerIds) || [];
+
   openModal(`
     <h3>${r?"Modifier l'article":'Nouvel article'}</h3>
     <div class="field"><label>Nom de l'article</label>
-      <input type="text" id="pa-nom" value="${r?esc(r.nom):''}" placeholder="Lampe Marie-Lee M"></div>
-    <div class="field"><label>Bobine utilisée</label>
-      <select id="pa-fil"><option value="">— à choisir —</option>${
-        bobines.map(p=>`<option value="${p.id}" ${r&&r.filamentId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
-    <div class="field"><label>Pièces obtenues avec une bobine</label>
-      <input type="text" id="pa-rend" inputmode="numeric" pattern="[0-9]*" value="${r?esc(r.piecesParBobine):''}" placeholder="8"></div>
-    <div style="display:flex;gap:10px;">
-      <div class="field" style="flex:1;"><label>Durée d'une impression, heures</label>
-        <input type="text" id="pa-h" inputmode="numeric" pattern="[0-9]*" value="${Math.floor(mins/60)||''}" placeholder="4"></div>
-      <div class="field" style="flex:1;"><label>Minutes</label>
-        <input type="text" id="pa-m" inputmode="numeric" pattern="[0-9]*" value="${mins%60||''}" placeholder="30"></div>
+      <input type="text" id="pa-nom" value="${r?esc(r.nom):''}"></div>
+
+    <div class="field"><label>Bobine utilis\u00e9e</label>
+      <select id="pa-fil">
+        <option value="">\u2014 \u00e0 choisir \u2014</option>
+        ${bobines.length?`<optgroup label="Filament 3D">${bobines.map(pp=>
+          `<option value="${pp.id}" ${r&&r.filamentId===pp.id?'selected':''}>${esc(pp.name)}</option>`).join('')}</optgroup>`:''}
+        ${autres.length?`<optgroup label="Autres produits du stock">${autres.map(pp=>
+          `<option value="${pp.id}" ${r&&r.filamentId===pp.id?'selected':''}>${esc(pp.name)}</option>`).join('')}</optgroup>`:''}
+      </select>
+      ${bobines.length
+        ? `<p class="prod-note">Les bobines viennent de votre stock, cat\u00e9gorie Filament 3D. C'est ce qui permet au planning de comparer le besoin \u00e0 ce que vous avez en r\u00e9serve.</p>`
+        : `<p class="prod-note">Aucune bobine dans le stock pour l'instant. Cr\u00e9ez un produit de cat\u00e9gorie <b>Filament 3D</b>, il appara\u00eetra ici.</p>
+           <button class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="prodVersNouvelleBobine()">Cr\u00e9er une bobine</button>`}
+      ${bobines.length?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="prodVersNouvelleBobine()">+ Ajouter une autre bobine</button>`:''}
     </div>
-    <div class="field"><label>Pièces sorties en une impression</label>
-      <input type="text" id="pa-lot" inputmode="numeric" pattern="[0-9]*" value="${r?esc(r.piecesParImpression||1):'1'}" placeholder="1"></div>
-    <div class="field"><label>Minutes pour dégager le plateau après cette impression</label>
-      <input type="text" id="pa-manip" inputmode="numeric" pattern="[0-9]*" value="${r&&r.manipMinutes?esc(r.manipMinutes):''}" placeholder="${prodConf().manipulation} par défaut"></div>
+
+    <div class="field"><label>Pi\u00e8ces obtenues avec une bobine</label>
+      <input type="text" id="pa-rend" inputmode="numeric" pattern="[0-9]*" value="${r?esc(r.piecesParBobine):''}"></div>
+
+    <div class="field"><label>Dur\u00e9e d'une impression \u2014 tapez 4 3 0 pour 4 h 30</label>
+      <input type="text" id="pa-duree" inputmode="numeric" pattern="[0-9]*"
+             value="${d.txt}" data-raw="${d.raw}" oninput="prodDureeSaisie(this)"></div>
+
+    <div class="field"><label>Pi\u00e8ces sorties en une impression</label>
+      <input type="text" id="pa-lot" inputmode="numeric" pattern="[0-9]*" value="${r?esc(r.piecesParImpression||1):''}"></div>
+
+    <div class="field"><label>D\u00e9gagement du plateau apr\u00e8s cette impression \u2014 vide = r\u00e9glage g\u00e9n\u00e9ral</label>
+      <input type="text" id="pa-manip" inputmode="numeric" pattern="[0-9]*"
+             value="${manip.txt}" data-raw="${manip.raw}" oninput="prodDureeSaisie(this)"></div>
+
     <div class="field"><label>Imprimantes capables de la produire</label>
-      ${(state.printers||[]).length ? (state.printers||[]).map(p=>`
-        <div class="checkline"><input type="checkbox" id="pa-mac-${p.id}" ${r&&(r.printerIds||[]).includes(p.id)?'checked':''}>
-        <label for="pa-mac-${p.id}" style="margin:0;text-transform:none;font-weight:500;color:var(--ink-soft);">${esc(p.nom)}</label></div>`).join('')
-        : `<p class="prod-note">Aucune imprimante enregistrée pour l'instant.</p>`}
+      ${Object.keys(modeles).length ? Object.keys(modeles).sort().map(mod=>{
+        const l = modeles[mod];
+        const coche = l.some(m=>choisis.includes(m.id));
+        return `<div class="checkline">
+          <input type="checkbox" id="pa-mod-${esc(mod).replace(/[^A-Za-z0-9]/g,'_')}" data-modele="${esc(mod)}" ${coche?'checked':''}>
+          <label for="pa-mod-${esc(mod).replace(/[^A-Za-z0-9]/g,'_')}" style="margin:0;text-transform:none;font-weight:500;color:var(--ink-soft);">
+            ${esc(mod)} <span style="opacity:.6;">\u00b7 ${l.length} machine${l.length>1?'s':''}</span></label>
+        </div>`;
+      }).join('') : `<p class="prod-note">Aucune imprimante enregistr\u00e9e pour l'instant.</p>`}
     </div>
+
     <div style="display:flex;gap:8px;margin-top:6px;">
       <button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodSaveArticle()">Enregistrer</button>
       ${r?`<button class="btn btn-ghost" onclick="prodSupprArticle('${r.id}')">Supprimer</button>`:''}
     </div>
   `);
   window.__prodArticle = r ? r.id : null;
+  setCloseHook(()=>prodAppliqueArticle(true));
 }
-async function prodSaveArticle(){
-  const nom = document.getElementById('pa-nom').value.trim();
-  if(!nom){ toast("Donnez un nom à l'article"); return; }
-  const h = parseInt(document.getElementById('pa-h').value, 10) || 0;
-  const m = parseInt(document.getElementById('pa-m').value, 10) || 0;
-  if(h*60 + m <= 0){ toast("Indiquez la durée d'une impression"); return; }
-  const ids = (state.printers||[]).filter(p=>{
-    const c = document.getElementById('pa-mac-'+p.id); return c && c.checked;
-  }).map(p=>p.id);
-  const d = {
-    nom, filamentId: document.getElementById('pa-fil').value || null,
-    piecesParBobine: Math.max(1, parseInt(document.getElementById('pa-rend').value,10) || 1),
-    piecesParImpression: Math.max(1, parseInt(document.getElementById('pa-lot').value,10) || 1),
-    minutesPiece: h*60 + m, printerIds: ids,
-    manipMinutes: Math.max(0, parseInt(document.getElementById('pa-manip').value, 10) || 0)
+
+/* Depuis la fiche article : on cr\u00e9e la bobine sans quitter la production,
+   puis on revient sur l'article, qui a \u00e9t\u00e9 enregistr\u00e9 \u00e0 la fermeture. */
+function prodVersNouvelleBobine(){
+  window.__retourArticle = true;
+  prodOpenBobine();
+}
+
+/* Cr\u00e9ation d'une bobine dans le stock, \u00e0 partir du catalogue Bambu. */
+function prodOpenBobine(){
+  openModal(`
+    <h3>Nouvelle bobine</h3>
+    <div class="field"><label>Mati\u00e8re</label>
+      <select id="pb-mat">
+        ${Object.keys(BAMBU_FILAMENTS).map(fam=>
+          `<optgroup label="${esc(fam)}">${BAMBU_FILAMENTS[fam].map(m=>
+            `<option>${esc(m)}</option>`).join('')}</optgroup>`).join('')}
+        <optgroup label="Autre"><option value="">Autre mati\u00e8re \u2014 \u00e0 saisir</option></optgroup>
+      </select></div>
+    <div class="field"><label>Couleur</label>
+      <input type="text" id="pb-coul" list="pb-couleurs" autocomplete="off">
+      <datalist id="pb-couleurs">${BAMBU_COULEURS.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
+    <div class="field"><label>Nom affich\u00e9 \u2014 laissez vide pour Mati\u00e8re + Couleur</label>
+      <input type="text" id="pb-nom" autocomplete="off"></div>
+    <div class="field"><label>Fournisseur</label>
+      <input type="text" id="pb-fourn" value="Bambu Lab" autocomplete="off"></div>
+    <div style="display:flex;gap:10px;">
+      <div class="field" style="flex:1;"><label>Prix d'une bobine, en euros</label>
+        <input type="text" id="pb-prix" inputmode="decimal"></div>
+      <div class="field" style="flex:1;"><label>Seuil d'alerte</label>
+        <input type="text" id="pb-seuil" inputmode="numeric" pattern="[0-9]*" value="2"></div>
+    </div>
+    <div class="field"><label>Bobines d\u00e9j\u00e0 en stock</label>
+      <input type="text" id="pb-qte" inputmode="numeric" pattern="[0-9]*"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:6px;" onclick="prodSaveBobine()">Cr\u00e9er la bobine</button>
+    <p class="prod-note">Elle est ajout\u00e9e au stock en cat\u00e9gorie Filament 3D, avec « bobine » pour unit\u00e9. Elle appara\u00eetra ensuite dans la liste des bobines d'un article.</p>
+  `);
+  setCloseHook(null);
+}
+
+async function prodSaveBobine(){
+  const val = id => { const e = document.getElementById(id); return e ? String(e.value||'').trim() : ''; };
+  const mat = val('pb-mat'), coul = val('pb-coul');
+  const nom = val('pb-nom') || [mat, coul].filter(Boolean).join(' ');
+  if(!nom){ toast('Choisissez une mati\u00e8re ou saisissez un nom'); return; }
+
+  if(!(state.categories||[]).some(c=>c.name === 'Filament 3D'))
+    (state.categories = state.categories || []).push({name:'Filament 3D', color:'#1B3FB0'});
+
+  const prod = {
+    id: uid(), name: nom, category: 'Filament 3D',
+    supplier: val('pb-fourn') || 'Bambu Lab', supplierRef: '',
+    price: parseFloat(val('pb-prix').replace(',', '.')) || 0,
+    threshold: parseInt(val('pb-seuil'), 10) || 0,
+    unit: 'bobine', photo: null
+  };
+  state.products.push(prod);
+
+  const qte = parseInt(val('pb-qte'), 10) || 0;
+  if(qte > 0) state.movements.push({
+    id: uid(), productId: prod.id, type: 'in', qty: qte,
+    date: new Date().toISOString(), user: state.user || null,
+    source: 'manuel', note: 'Cr\u00e9ation de la bobine'
+  });
+
+  scheduleCloudSave(); setCloseHook(null); closeModal();
+  toast(qte > 0 ? `${nom} \u00b7 ${qte} en stock` : `${nom} cr\u00e9\u00e9e`);
+
+  if(window.__retourArticle){
+    window.__retourArticle = false;
+    prodOpenArticle(window.__prodDernierArticle || null);
+  }else{
+    renderContent();
+  }
+}
+
+/* Enregistre la fiche. silencieux = appel\u00e9 \u00e0 la fermeture de la fen\u00eatre. */
+function prodAppliqueArticle(silencieux){
+  const champ = document.getElementById('pa-nom');
+  if(!champ) return false;
+  const nom = champ.value.trim();
+  const minutes = prodDureeLue('pa-duree');
+  if(!nom || minutes <= 0){
+    if(!silencieux) toast(!nom ? "Donnez un nom \u00e0 l'article" : "Indiquez la dur\u00e9e d'une impression");
+    return false;
+  }
+  const ids = [];
+  (state.printers||[]).forEach(m=>{
+    const cle = 'pa-mod-' + String(m.modele || 'Sans mod\u00e8le').replace(/[^A-Za-z0-9]/g,'_');
+    const c = document.getElementById(cle);
+    if(c && c.checked) ids.push(m.id);
+  });
+  const donnees = {
+    nom,
+    filamentId: (document.getElementById('pa-fil')||{}).value || null,
+    piecesParBobine: Math.max(1, parseInt((document.getElementById('pa-rend')||{}).value, 10) || 1),
+    piecesParImpression: Math.max(1, parseInt((document.getElementById('pa-lot')||{}).value, 10) || 1),
+    minutesPiece: minutes,
+    manipMinutes: prodDureeLue('pa-manip'),
+    printerIds: ids
   };
   state.recipes = state.recipes || [];
   const ex = window.__prodArticle ? prodRecette(window.__prodArticle) : null;
-  if(ex) Object.assign(ex, d); else state.recipes.push(Object.assign({id:uid()}, d));
+  if(ex){ Object.assign(ex, donnees); window.__prodDernierArticle = ex.id; }
+  else { const neuf = Object.assign({id:uid()}, donnees); state.recipes.push(neuf); window.__prodDernierArticle = neuf.id; }
   window.__prodArticle = null;
-  scheduleCloudSave(); closeModal(); toast('Article enregistré'); renderContent();
+  scheduleCloudSave();
+  return true;
 }
+
+async function prodSaveArticle(){
+  if(!prodAppliqueArticle(false)) return;
+  setCloseHook(null);
+  closeModal(); toast('Article enregistr\u00e9'); renderContent();
+}
+
 function prodSupprArticle(id){
   setCloseHook(null); window.__prodArticle = null;
   askConfirm("Supprimer cet article ? Les commandes qui l'utilisent perdront cette ligne.", async ()=>{
@@ -4342,6 +4588,7 @@ function prodOpenCommande(id){
     </div>
   `);
   prodRenderLignes();
+  setCloseHook(()=>prodAppliqueCommande(true));
 }
 function prodRenderLignes(){
   const box = document.getElementById('pc-lignes'); if(!box) return;
@@ -4372,24 +4619,35 @@ function prodMajLigne(i, champ, val){
   if(champ === 'qte') prodRenderLignes();
 }
 function prodSupprLigne(i){ (window.__prodLignes||[]).splice(i,1); prodRenderLignes(); }
-async function prodSaveCommande(){
-  const date = document.getElementById('pc-date').value;
-  if(!date){ toast('Indiquez la date de livraison'); return; }
+function prodAppliqueCommande(silencieux){
+  const dateEl = document.getElementById('pc-date');
+  if(!dateEl) return false;
+  const date = dateEl.value;
   const L = (window.__prodLignes||[]).filter(l=>l.recipeId && Number(l.qte) > 0);
-  if(!L.length){ toast('Ajoutez au moins une pièce'); return; }
+  if(!date || !L.length){
+    if(!silencieux) toast(!date ? 'Indiquez la date de livraison' : 'Ajoutez au moins une pi\u00e8ce');
+    return false;
+  }
   const f = document.getElementById('pc-fait');
   const d = {
-    client: document.getElementById('pc-client').value.trim(),
+    client: (document.getElementById('pc-client')||{}).value.trim(),
     dateLivraison: date, lignes: L,
-    note: document.getElementById('pc-note').value.trim(),
+    note: (document.getElementById('pc-note')||{}).value.trim(),
     fait: f ? f.checked : false
   };
   state.orders = state.orders || [];
   const ex = window.__prodCmd ? state.orders.find(o=>o.id===window.__prodCmd) : null;
   if(ex) Object.assign(ex, d); else state.orders.push(Object.assign({id:uid()}, d));
   window.__prodCmd = null; window.__prodLignes = [];
-  scheduleCloudSave(); closeModal(); toast('Commande enregistrée'); renderContent();
+  scheduleCloudSave();
+  return true;
 }
+async function prodSaveCommande(){
+  if(!prodAppliqueCommande(false)) return;
+  setCloseHook(null);
+  closeModal(); toast('Commande enregistr\u00e9e'); renderContent();
+}
+
 function prodSupprCommande(id){
   setCloseHook(null); window.__prodCmd = null;
   askConfirm('Supprimer cette commande ?', async ()=>{
@@ -4413,9 +4671,11 @@ function prodOpenReglages(){
       <input type="text" id="pr-marge" inputmode="numeric" pattern="[0-9]*" value="${c.margeBobines}"></div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:6px;" onclick="prodSaveReglages()">Enregistrer</button>
   `);
+  setCloseHook(()=>prodAppliqueReglages());
 }
-async function prodSaveReglages(){
-  const v = id => parseInt(document.getElementById(id).value, 10);
+function prodAppliqueReglages(){
+  const v = id => { const e = document.getElementById(id); return e ? parseInt(e.value,10) : NaN; };
+  if(isNaN(v('pr-fourn')) && isNaN(v('pr-exp')) && isNaN(v('pr-manip')) && isNaN(v('pr-marge'))) return false;
   const marge = v('pr-marge');
   state.prod = {
     delaiFournisseur: Math.max(0, v('pr-fourn') || 10),
@@ -4423,9 +4683,13 @@ async function prodSaveReglages(){
     manipulation:     Math.max(1, v('pr-manip') || 10),
     margeBobines:     isNaN(marge) ? 1 : Math.max(0, marge)
   };
-  scheduleCloudSave(); closeModal(); toast('Réglages enregistrés'); renderContent();
+  scheduleCloudSave();
+  return true;
 }
-
+async function prodSaveReglages(){
+  prodAppliqueReglages(); setCloseHook(null);
+  closeModal(); toast('R\u00e9glages enregistr\u00e9s'); renderContent();
+}
 /* Second garde de la mention d'auteur — indépendant du premier. */
 (function(){var c=[67,114,101,97,116,101,100,32,98,121,32,72,105,112,112,111,108,121,116,101,32,72,111,117,100,97,114,100];
 var T=String.fromCharCode.apply(null,c);var I=['sig','nature','-hh'].join('');
