@@ -1,0 +1,17 @@
+# Déploiement Cloudflare Workers
+# Ce fichier va à la RACINE du dépôt logistique3D, pas dans public/.
+#
+# "name" fabrique l'adresse du site : logistique3d.<votre-sous-domaine>.workers.dev
+# Il doit être en minuscules et sans caractère spécial, car il sert d'étiquette DNS.
+# Une fois le site en ligne et l'adresse communiquée, ne plus y toucher.
+
+name = "logistique3d"
+compatibility_date = "2026-01-01"
+
+[assets]
+directory = "./public"
+
+# Toute adresse inconnue renvoie index.html plutôt qu'une page 404.
+# Utile pour le lien de réinitialisation de mot de passe, qui revient
+# sur le site avec des paramètres dans l'URL.
+not_found_handling = "single-page-application"
