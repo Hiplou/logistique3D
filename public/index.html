@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.23)
+  Gestion de stock — stock et production 3D  (v1.25)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.23]</title>
+<title>Gestion de stock [v1.25]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -448,7 +448,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.23</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.25</p>
   </div>
 </div>
 
@@ -458,7 +458,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.23</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.25</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1305,7 +1305,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.23';
+const VERSION = 'v1.25';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -3766,7 +3766,8 @@ function prodConf(){
     delaiFournisseur: prodNum(d.delaiFournisseur, 10),
     delaiExpedition:  prodNum(d.delaiExpedition, 6),
     manipulation:     prodNum(d.manipulation, 10),   // minutes pour vider un plateau
-    margeBobines:     (d.margeBobines === 0 ? 0 : prodNum(d.margeBobines, 1))
+    margeBobines:     (d.margeBobines === 0 ? 0 : prodNum(d.margeBobines, 1)),
+    montantMini:      prodNum(d.montantMini, 0)
   };
 }
 /* Ce qui a été réellement imprimé. Une impression validée disparaît du
@@ -3864,7 +3865,6 @@ function prodProchainePresence(site, ts){
   return null;
 }
 
-/* ---------------- La simulation ---------------- */
 /* Trois \u00e9tats : en production, produite mais pas partie, livr\u00e9e. */
 function prodEtatCommande(o){
   if(o.livree) return {cle:'livree',    coul:'var(--green)', txt:'Livr\u00e9e'};
@@ -3931,96 +3931,327 @@ function prodCommandesEnCours(){
   return (state.orders||[]).filter(o=>!o.fait)
     .sort((a,b)=> String(a.dateLivraison||'').localeCompare(String(b.dateLivraison||'')));
 }
-/* machines : liste de machines (les clones portent clonDe pour hériter des
-   compatibilités). sites : calendriers à utiliser (permet de tester un
-   élargissement des plages sans toucher aux données réelles). */
-function prodSimule(machines, sites){
+
+/* ---------------- La simulation ----------------
+   Deux contraintes se combinent : les machines et la matière.
+
+   Une machine ne peut imprimer que si la bobine de la pièce est réellement
+   disponible à cet instant. Quand la bobine de la pièce la plus urgente
+   manque, l'application cherche une autre pièce à glisser — mais seulement
+   si elle libère la machine avant l'arrivée de la bobine attendue. Occuper
+   une machine ne doit jamais retarder une livraison.
+
+   Le calcul se fait donc en trois temps : une première passe sans contrainte
+   de matière pour connaître la consommation, un plan de réapprovisionnement
+   échelonné qui en découle, puis une seconde passe qui tient compte des
+   dates d'arrivée réelles. */
+
+function prodTravaux(){
   const c = prodConf();
-  const lieuDe = m => (sites||[]).find(s=>s.id===m.siteId) || (sites||[])[0] || null;
-  const maintenant = new Date();
-  const libre = {};
-  machines.forEach(m=>{ libre[m.id] = new Date(maintenant); });
-
-  const resultats = [];
-  const jobs = [];
-  let impossible = false;
-
-  prodCommandesEnCours().forEach(o=>{
-    let fin = null, debut = null, sansMachine = false, minutes = 0, resteTotal = 0;
-
+  const travaux = [];
+  prodCommandesEnCours().forEach((o, rang)=>{
+    const limite = o.dateLivraison ? prodPlusJours(o.dateLivraison, -c.delaiExpedition) : todayISO();
     (o.lignes||[]).forEach(l=>{
       const r = prodRecette(l.recipeId);
       if(!r) return;
       const parImp = Math.max(1, Number(r.piecesParImpression) || 1);
       const reste = prodReste(o, l);
       if(reste <= 0) return;
-      resteTotal += reste;
       const nb = Math.ceil(reste / parImp);
-      const duree = Math.max(1, Number(r.minutesPiece) || 1);
-      const manip = prodManip(r);
-      const compat = machines.filter(m => (r.printerIds||[]).includes(m.clonDe || m.id));
-      if(!compat.length){ sansMachine = true; return; }
-      minutes += nb * duree;
-
       for(let k = 0; k < nb; k++){
-        let choisie = compat[0];
-        compat.forEach(m=>{ if(libre[m.id] < libre[choisie.id]) choisie = m; });
-        const depart = new Date(libre[choisie.id]);
-        const finImp = new Date(depart.getTime() + duree * 60000);
-        const vidage = prodProchainePresence(lieuDe(choisie), finImp);
-        if(!vidage){ impossible = true; return; }
-        const libere = new Date(vidage.getTime() + manip * 60000);
-        libre[choisie.id] = libere;
-        if(!debut || depart < debut) debut = depart;
-        if(!fin || libere > fin) fin = libere;
-        jobs.push({orderId:o.id, client:o.client, recipeId:r.id, article:r.nom,
-                   printerId:choisie.id, machine:choisie.nom, virtuelle:!!choisie.clonDe,
-                   pieces: Math.min(parImp, reste - k*parImp),
-                   depart, finImp, vidage, libere});
+        const pieces = Math.min(parImp, reste - k * parImp);
+        travaux.push({
+          orderId: o.id, client: o.client, recipeId: r.id, article: r.nom,
+          filamentId: r.filamentId || null,
+          conso: r.filamentId ? pieces / Math.max(1, Number(r.piecesParBobine) || 1) : 0,
+          duree: Math.max(1, Number(r.minutesPiece) || 1),
+          manip: prodManip(r),
+          compat: (r.printerIds || []).slice(),
+          pieces, limite, rang, ordre: travaux.length
+        });
       }
     });
+  });
+  return travaux;
+}
 
+/* Stock de bobines disponible à un instant donné, arrivées comprises. */
+/* Délai de livraison propre à une bobine. À défaut, le réglage général :
+   un filament français et un import n'ont pas le même délai. */
+function prodDelaiFil(filId){
+  const p = (state.products||[]).find(x=>x.id === filId);
+  const v = p ? Number(p.delaiJours) : NaN;
+  return (isFinite(v) && v >= 0) ? v : prodConf().delaiFournisseur;
+}
+
+function prodDispo(filId, t, stock, arrivees){
+  let q = stock[filId] || 0;
+  (arrivees[filId] || []).forEach(a=>{ if(a.date <= t) q += a.qte; });
+  return q;
+}
+function prodProchaineArrivee(filId, t, arrivees){
+  let meilleure = null;
+  (arrivees[filId] || []).forEach(a=>{
+    if(a.date > t && (!meilleure || a.date < meilleure)) meilleure = a.date;
+  });
+  return meilleure;
+}
+
+/* machines : les machines à utiliser (les clones portent clonDe).
+   options : {matiere:false pour ignorer les bobines, arrivees:{filId:[{date,qte}]}} */
+function prodSimule(machines, sites, options){
+  const c = prodConf();
+  const opt = options || {};
+  const tenirCompteMatiere = opt.matiere !== false;
+  const arrivees = opt.arrivees || {};
+  const lieuDe = m => (sites||[]).find(s=>s.id===m.siteId) || (sites||[])[0] || null;
+  const maintenant = new Date();
+
+  const stock = {};
+  (state.products||[]).forEach(p=>{ stock[p.id] = currentStock(p.id); });
+
+  const libre = {};
+  machines.forEach(m=>{ libre[m.id] = new Date(maintenant); });
+
+  const restants = prodTravaux();
+  const jobs = [];
+  const conso = {};            // filamentId -> [{date, qte}] pour le plan d'appro
+  const attentes = {};         // filamentId -> minutes de machine perdues
+  let impossible = false, sansMachineGlobal = false;
+
+  let garde = 0;
+  while(restants.length && garde++ < 20000){
+    // La machine libre le plus tôt choisit son prochain travail.
+    let mach = null;
+    machines.forEach(m=>{
+      if(!restants.some(j=>j.compat.includes(m.clonDe || m.id))) return;
+      if(!mach || libre[m.id] < libre[mach.id]) mach = m;
+    });
+    if(!mach){ sansMachineGlobal = true; break; }
+
+    const T = new Date(libre[mach.id]);
+    const possibles = restants.filter(j=>j.compat.includes(mach.clonDe || mach.id));
+    if(!possibles.length){ sansMachineGlobal = true; break; }
+
+    // Les plus urgents d'abord.
+    possibles.sort((a,b)=> String(a.limite).localeCompare(String(b.limite)) || a.ordre - b.ordre);
+
+    let choisi = null, attenteJusqu = null;
+    if(!tenirCompteMatiere){
+      choisi = possibles[0];
+    }else{
+      const bloques = [];
+      for(const j of possibles){
+        if(!j.filamentId || prodDispo(j.filamentId, T, stock, arrivees) >= j.conso - 1e-9){
+          if(!bloques.length){ choisi = j; break; }     // rien de plus urgent n'attend
+          // On glisse ce travail seulement s'il rend la machine avant l'arrivée attendue.
+          const finImp = new Date(T.getTime() + j.duree * 60000);
+          const vid = prodProchainePresence(lieuDe(mach), finImp);
+          const rendu = vid ? new Date(vid.getTime() + j.manip * 60000) : null;
+          if(rendu && bloques[0].arrivee && rendu <= bloques[0].arrivee){ choisi = j; break; }
+          continue;                                     // sinon on laisse la machine libre
+        }
+        const arr = prodProchaineArrivee(j.filamentId, T, arrivees);
+        bloques.push({job:j, arrivee: arr ? new Date(arr) : null});
+      }
+      if(!choisi){
+        const avecDate = bloques.filter(b=>b.arrivee);
+        if(!avecDate.length){ impossible = true; break; }
+        attenteJusqu = avecDate.reduce((min,b)=> !min || b.arrivee < min ? b.arrivee : min, null);
+      }
+    }
+
+    if(!choisi){
+      const perdu = (attenteJusqu - T) / 60000;
+      const f = possibles.find(j=>j.filamentId);
+      if(f) attentes[f.filamentId] = (attentes[f.filamentId] || 0) + Math.max(0, perdu);
+      libre[mach.id] = new Date(attenteJusqu);
+      continue;
+    }
+
+    const depart = new Date(T);
+    const finImp = new Date(depart.getTime() + choisi.duree * 60000);
+    const vidage = prodProchainePresence(lieuDe(mach), finImp);
+    if(!vidage){ impossible = true; break; }
+    const libere = new Date(vidage.getTime() + choisi.manip * 60000);
+    libre[mach.id] = libere;
+
+    if(choisi.filamentId){
+      stock[choisi.filamentId] = (stock[choisi.filamentId] || 0) - choisi.conso;
+      (conso[choisi.filamentId] = conso[choisi.filamentId] || []).push({date: depart, qte: choisi.conso});
+    }
+
+    jobs.push(Object.assign({}, choisi, {
+      printerId: mach.id, machine: mach.nom, virtuelle: !!mach.clonDe,
+      depart, finImp, vidage, libere
+    }));
+    restants.splice(restants.indexOf(choisi), 1);
+  }
+
+  // Regroupement par commande.
+  const resultats = prodCommandesEnCours().map(o=>{
+    const siens = jobs.filter(j=>j.orderId === o.id);
     const limite = o.dateLivraison ? prodPlusJours(o.dateLivraison, -c.delaiExpedition) : prodIso(maintenant);
+    const resteTotal = (o.lignes||[]).reduce((t,l)=>t + prodReste(o,l), 0);
+    const minutes = siens.reduce((t,j)=>t + j.duree, 0);
+    const sansMachine = (o.lignes||[]).some(l=>{
+      const r = prodRecette(l.recipeId);
+      if(!r || prodReste(o,l) <= 0) return false;
+      return !(r.printerIds||[]).some(id=>{ const p = prodImprimante(id); return p && p.actif !== false; });
+    });
+    let fin = null, debut = null;
+    siens.forEach(j=>{
+      if(!fin || j.libere > fin) fin = j.libere;
+      if(!debut || j.depart < debut) debut = j.depart;
+    });
     const finIso = fin ? prodIso(fin) : null;
-    resultats.push({
+    return {
       o, minutes, sansMachine, resteTotal, termine: resteTotal === 0,
       debut: debut ? prodIso(debut) : prodIso(maintenant),
       fin: finIso, limite,
       retard: !!(finIso && finIso > limite),
       jourRetard: finIso ? Math.round((prodAt(finIso,'12:00') - prodAt(limite,'12:00')) / 86400000) : 0
-    });
+    };
   });
+
   jobs.sort((a,b)=> a.depart - b.depart);
-  return {commandes: resultats, jobs, impossible,
+  return {commandes: resultats, jobs, conso, attentes, impossible,
+          sansMachineGlobal,
           enRetard: resultats.filter(r=>r.retard || r.sansMachine)};
 }
 
-/* ---------------- Bobines ---------------- */
-function prodBobines(sim){
+/* ---------------- Réapprovisionnement échelonné ----------------
+   Plutôt qu'une grosse commande immédiate, on découpe en livraisons
+   successives, chacune passée au plus tard. Chaque commande doit atteindre
+   le montant minimum du fournisseur : si elle ne l'atteint pas, on avance
+   les bobines de la commande suivante jusqu'à y arriver. */
+function prodPlanAppro(consoParFil){
   const c = prodConf();
   const aujourdhui = todayISO();
-  const fil = {};
+  const lots = [];          // {dateCommande, dateArrivee, lignes:{filId:qte}, montant}
+
+  Object.keys(consoParFil).forEach(filId=>{
+    const prod = (state.products||[]).find(p=>p.id === filId);
+    const delai = prodDelaiFil(filId);
+    const evts = consoParFil[filId].slice().sort((a,b)=>a.date - b.date);
+    let dispo = (prod ? currentStock(prod.id) : 0) - c.margeBobines;
+    let i = 0;
+    while(i < evts.length){
+      // On consomme jusqu'à tomber sous zéro.
+      while(i < evts.length && dispo - evts[i].qte >= -1e-9){ dispo -= evts[i].qte; i++; }
+      if(i >= evts.length) break;
+      const dateBesoin = prodIso(evts[i].date);
+      let dateCommande = prodPlusJours(dateBesoin, -delai);
+      if(dateCommande < aujourdhui) dateCommande = aujourdhui;
+      // Quantité : de quoi tenir jusqu'à la commande suivante, une semaine plus tard.
+      const horizon = prodAt(prodPlusJours(dateBesoin, 7 + delai), '23:59');
+      let besoin = 0;
+      for(let k = i; k < evts.length && evts[k].date <= horizon; k++) besoin += evts[k].qte;
+      const qte = Math.max(1, Math.ceil(besoin - dispo));
+      lots.push({filId, dateCommande, delai, arrivee: prodPlusJours(dateCommande, delai),
+                 qte, prix: (prod && Number(prod.price)) || 0,
+                 nom: prod ? prod.name : 'Bobine supprimée'});
+      dispo += qte;
+    }
+  });
+
+  // Regroupement par date de commande.
+  const parDate = {};
+  lots.forEach(l=>{ (parDate[l.dateCommande] = parDate[l.dateCommande] || []).push(l); });
+  const dates = Object.keys(parDate).sort();
+  const commandes = dates.map(d=>{
+    const lignes = parDate[d];
+    // Chaque ligne garde son délai : la commande est complète quand la plus lente arrive.
+    return {date: d, lignes,
+            arrivee: lignes.reduce((max,l)=> l.arrivee > max ? l.arrivee : max, lignes[0].arrivee),
+            montant: lignes.reduce((t,l)=>t + l.qte * l.prix, 0)};
+  });
+
+  // Deux commandes rapprochées sous le minimum : on les fusionne sur la
+  // date la plus tôt, plutôt que de payer deux fois le port.
+  const mini = c.montantMini;
+  if(mini > 0){
+    for(let k = 0; k < commandes.length - 1; k++){
+      const a = commandes[k], b = commandes[k+1];
+      if(a.montant >= mini - 1e-9) continue;
+      const ecart = (prodAt(b.date,'12:00') - prodAt(a.date,'12:00')) / 86400000;
+      if(ecart > 10) continue;
+      b.lignes.forEach(l=>{
+        l.arrivee = prodPlusJours(a.date, l.delai);
+        const deja = a.lignes.find(x=>x.filId === l.filId);
+        if(deja) deja.qte += l.qte; else a.lignes.push(l);
+      });
+      a.montant = a.lignes.reduce((t,l)=>t + l.qte * l.prix, 0);
+      a.arrivee = a.lignes.reduce((max,l)=> l.arrivee > max ? l.arrivee : max, a.lignes[0].arrivee);
+      commandes.splice(k+1, 1);
+      k--;
+    }
+  }
+
+  // Montant minimum : on avance des bobines de la commande suivante.
+  if(mini > 0){
+    for(let k = 0; k < commandes.length; k++){
+      const cm = commandes[k];
+      let suiv = k + 1;
+      while(cm.montant < mini - 1e-9 && suiv < commandes.length){
+        const don = commandes[suiv];
+        while(don.lignes.length && cm.montant < mini - 1e-9){
+          const l = don.lignes[0];
+          const manque = mini - cm.montant;
+          const combien = l.prix > 0 ? Math.min(l.qte, Math.ceil(manque / l.prix)) : l.qte;
+          const dejaLa = cm.lignes.find(x=>x.filId === l.filId);
+          if(dejaLa) dejaLa.qte += combien;
+          else cm.lignes.push(Object.assign({}, l, {qte: combien, arrivee: prodPlusJours(cm.date, l.delai)}));
+          cm.montant += combien * l.prix;
+          l.qte -= combien;
+          if(l.qte <= 0) don.lignes.shift();
+        }
+        don.montant = don.lignes.reduce((t,l)=>t + l.qte * l.prix, 0);
+        if(!don.lignes.length){ commandes.splice(suiv, 1); } else suiv++;
+      }
+    }
+  }
+
+  const arrivees = {};
+  commandes.forEach(cm=>cm.lignes.forEach(l=>{
+    (arrivees[l.filId] = arrivees[l.filId] || []).push({date: prodAt(l.arrivee || cm.arrivee, '09:00'), qte: l.qte});
+  }));
+  return {commandes, arrivees};
+}
+
+/* ---------------- Bobines : l'état de chaque référence ---------------- */
+function prodBobines(sim, appro){
+  const c = prodConf();
+  const aujourdhui = todayISO();
+  const out = [];
+  const vus = {};
   sim.commandes.forEach(x=>{
     (x.o.lignes||[]).forEach(l=>{
       const r = prodRecette(l.recipeId);
-      if(!r || !r.filamentId) return;
-      const prod = state.products.find(p=>p.id===r.filamentId);
-      if(!fil[r.filamentId]) fil[r.filamentId] = {
-        id:r.filamentId, nom: prod ? prod.name : 'Bobine supprimée',
-        stock: prod ? currentStock(prod.id) : 0, besoin:0, dateBesoin:null
-      };
-      const f = fil[r.filamentId];
-      f.besoin += prodReste(x.o, l) / Math.max(1, Number(r.piecesParBobine)||1);
-      if(!f.dateBesoin && f.besoin > f.stock - c.margeBobines) f.dateBesoin = x.debut;
+      if(!r || !r.filamentId || vus[r.filamentId]) return;
+      vus[r.filamentId] = true;
+      const prod = (state.products||[]).find(p=>p.id === r.filamentId);
+      const besoin = (sim.conso[r.filamentId] || []).reduce((t,e)=>t + e.qte, 0);
+      const cmds = (appro.commandes || []).filter(cm=>cm.lignes.some(li=>li.filId === r.filamentId));
+      const aCommander = cmds.reduce((t,cm)=>
+        t + cm.lignes.filter(li=>li.filId === r.filamentId).reduce((s,li)=>s + li.qte, 0), 0);
+      const premiere = cmds.length ? cmds[0] : null;
+      out.push({
+        id: r.filamentId,
+        nom: prod ? prod.name : 'Bobine supprimée',
+        stock: prod ? currentStock(prod.id) : 0,
+        besoin, manque: aCommander,
+        dateCommande: premiere ? premiere.date : null,
+        urgent: !!(premiere && premiere.date <= aujourdhui),
+        echelonnee: cmds.length > 1,
+        nbCommandes: cmds.length,
+        attente: Math.round((sim.attentes[r.filamentId] || 0) / 60)
+      });
     });
   });
-  return Object.values(fil).map(f=>{
-    f.manque = Math.max(0, Math.ceil(f.besoin + c.margeBobines - f.stock));
-    f.dateCommande = f.dateBesoin ? prodPlusJours(f.dateBesoin, -c.delaiFournisseur) : null;
-    f.urgent = f.manque > 0 && f.dateCommande && f.dateCommande <= aujourdhui;
-    return f;
-  }).filter(f=>f.besoin > 0)
-    .sort((a,b)=> (b.manque>0)-(a.manque>0) || String(a.dateCommande||'z').localeCompare(String(b.dateCommande||'z')));
+  return out.filter(f=>f.besoin > 0)
+    .sort((a,b)=> (b.manque>0)-(a.manque>0) ||
+                  String(a.dateCommande||'z').localeCompare(String(b.dateCommande||'z')));
 }
 
 /* ---------------- Les remèdes ----------------
@@ -4116,8 +4347,16 @@ function prodPlanning(){
   const cle = JSON.stringify([state.orders, state.recipes, state.printers, state.sites,
                               state.prod, (state.runs||[]).length, state.movements.length]);
   if(window.__prodCache && window.__prodCache.cle === cle) return window.__prodCache.val;
-  const sim = prodSimule(prodMachines(), state.sites || []);
-  const val = {sim, alertes: prodBobines(sim), conf: prodConf(), machines: prodMachines().length};
+  const machines = prodMachines();
+  const sites = state.sites || [];
+  // 1. Sans contrainte de matière : on apprend ce qui sera consommé et quand.
+  const libre = prodSimule(machines, sites, {matiere:false});
+  // 2. Le plan de commandes en découle, échelonné et au plus tard.
+  const appro = prodPlanAppro(libre.conso);
+  // 3. On rejoue en tenant compte des dates d'arrivée réelles.
+  const sim = prodSimule(machines, sites, {arrivees: appro.arrivees});
+  const val = {sim, libre, appro, alertes: prodBobines(sim, appro),
+               conf: prodConf(), machines: machines.length};
   window.__prodCache = {cle, val};
   return val;
 }
@@ -4195,13 +4434,33 @@ function viewProdPlanning(){
       <div class="prod-row-nom">${esc(f.nom)}</div>
       <div class="prod-row-sub">${ok
         ? `Stock suffisant : ${f.stock} en réserve pour ${f.besoin.toFixed(1)} nécessaires`
-        : `Il manque ${f.manque} bobine${f.manque>1?'s':''} — ${f.stock} en stock, ${f.besoin.toFixed(1)} nécessaires`}</div>
+        : `${f.stock} en stock, ${f.besoin.toFixed(1)} nécessaires — ${f.manque} bobine${f.manque>1?'s':''} à commander${
+            f.echelonnee ? `, en ${f.nbCommandes} livraisons` : ''}`}</div>
       ${ok?'':`<div class="prod-row-sub" style="color:${coul};font-weight:600;">${
-        f.dateCommande ? (f.urgent ? `À commander maintenant, l'échéance était le ${fmtDate(f.dateCommande)}`
-                                   : `À commander avant le ${fmtDate(f.dateCommande)}`)
+        f.dateCommande ? (f.urgent ? `Première commande à passer maintenant`
+                                   : `Première commande à passer le ${fmtDate(f.dateCommande)}`)
                        : 'Date de besoin inconnue'}</div>`}
+      ${f.attente > 0 ? `<div class="prod-row-sub" style="color:var(--rust);">${f.attente} h de machine perdues à attendre cette bobine</div>` : ''}
     </div>`;
   }).join('') : `<div class="empty">Aucun article de ces commandes n'a de bobine renseignée.</div>`;
+
+  const lots = (p.appro && p.appro.commandes) || [];
+  const appro = lots.length ? `
+    <h3 class="prod-h">Commandes fournisseur à passer</h3>
+    ${lots.map(cm=>{
+      const passe = cm.date <= todayISO();
+      const sousMini = p.conf.montantMini > 0 && cm.montant < p.conf.montantMini;
+      return `<div class="prod-row" style="border-left:3px solid ${passe?'var(--rust)':'var(--teal)'};">
+        <div class="prod-row-nom">${passe ? 'À passer maintenant' : `À passer le ${fmtDate(cm.date)}`}${
+          cm.montant ? ` · ${fmtEUR(cm.montant)}` : ''}</div>
+        <div class="prod-row-sub">Livraison attendue le ${fmtDate(cm.arrivee)}</div>
+        ${cm.lignes.map(l=>{
+          const varie = cm.lignes.some(x=>x.delai !== cm.lignes[0].delai);
+          return `<div class="prod-row-sub">${l.qte} × ${esc(l.nom)}${varie ? ` — arrive le ${fmtDate(l.arrivee)}` : ''}</div>`;
+        }).join('')}
+        ${sousMini ? `<div class="prod-row-sub" style="color:var(--amber);">Sous le minimum de ${fmtEUR(p.conf.montantMini)} — regroupez avec la commande suivante</div>` : ''}
+      </div>`;
+    }).join('')}` : '';
 
   const cmds = p.sim.commandes.map(x=>{
     const coul = x.sansMachine || x.retard ? 'var(--rust)' : 'var(--green)';
@@ -4227,9 +4486,10 @@ function viewProdPlanning(){
     ${avert}${solution}
     <h3 class="prod-h">Bobines</h3>
     ${bobines}
+    ${appro}
     <h3 class="prod-h">Commandes</h3>
     ${cmds}
-    <p class="prod-note">Chaque impression démarre dès que la machine est libre et tourne sans surveillance. La machine ne se libère qu'au prochain créneau de présence du lieu, plus ${p.conf.manipulation} min pour vider le plateau. Expédition comptée ${p.conf.delaiExpedition} jours, réception d'une bobine ${p.conf.delaiFournisseur} jours.</p>`;
+    <p class="prod-note">Chaque impression démarre dès que la machine est libre et tourne sans surveillance. La machine ne se libère qu'au prochain créneau de présence du lieu, plus ${p.conf.manipulation} min pour vider le plateau. Expédition comptée ${p.conf.delaiExpedition} jours, réception d'une bobine selon le délai propre à chaque référence. Les bobines sont commandées par livraisons successives plutôt qu'en une fois, chacune au plus tard. Une machine n'imprime une pièce moins urgente que si elle se libère avant l'arrivée de la bobine attendue.</p>`;
 }
 
 /* ------------------------------ SUIVI ------------------------------
@@ -4713,11 +4973,15 @@ function prodVersNouvelleBobine(){
   prodOpenBobine();
 }
 
-/* Cr\u00e9ation d'une bobine dans le stock, \u00e0 partir du catalogue Bambu. */
-function prodOpenBobine(){
+/* Fiche bobine : cr\u00e9ation \u00e0 partir du catalogue Bambu, ou modification
+   d'une bobine d\u00e9j\u00e0 en stock. */
+function prodOpenBobine(id){
+  const b = id ? (state.products||[]).find(p=>p.id === id) : null;
+  window.__prodBobine = b ? b.id : null;
+  const c = prodConf();
   openModal(`
-    <h3>Nouvelle bobine</h3>
-    <div class="field"><label>Mati\u00e8re</label>
+    <h3>${b ? 'Modifier la bobine' : 'Nouvelle bobine'}</h3>
+    ${b ? '' : `<div class="field"><label>Mati\u00e8re</label>
       <select id="pb-mat">
         ${Object.keys(BAMBU_FILAMENTS).map(fam=>
           `<optgroup label="${esc(fam)}">${BAMBU_FILAMENTS[fam].map(m=>
@@ -4726,52 +4990,62 @@ function prodOpenBobine(){
       </select></div>
     <div class="field"><label>Couleur</label>
       <input type="text" id="pb-coul" list="pb-couleurs" autocomplete="off">
-      <datalist id="pb-couleurs">${BAMBU_COULEURS.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
-    <div class="field"><label>Nom affich\u00e9 \u2014 laissez vide pour Mati\u00e8re + Couleur</label>
-      <input type="text" id="pb-nom" autocomplete="off"></div>
+      <datalist id="pb-couleurs">${BAMBU_COULEURS.map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div>`}
+    <div class="field"><label>${b ? 'Nom' : 'Nom affich\u00e9 \u2014 laissez vide pour Mati\u00e8re + Couleur'}</label>
+      <input type="text" id="pb-nom" value="${b ? esc(b.name) : ''}" autocomplete="off"></div>
     <div class="field"><label>Fournisseur</label>
-      <input type="text" id="pb-fourn" value="Bambu Lab" autocomplete="off"></div>
+      <input type="text" id="pb-fourn" value="${b ? esc(b.supplier||'') : 'Bambu Lab'}" autocomplete="off"></div>
     <div style="display:flex;gap:10px;">
       <div class="field" style="flex:1;"><label>Prix d'une bobine, en euros</label>
-        <input type="text" id="pb-prix" inputmode="decimal"></div>
+        <input type="text" id="pb-prix" inputmode="decimal" value="${b && b.price ? esc(b.price) : ''}"></div>
       <div class="field" style="flex:1;"><label>Seuil d'alerte</label>
-        <input type="text" id="pb-seuil" inputmode="numeric" pattern="[0-9]*" value="2"></div>
+        <input type="text" id="pb-seuil" inputmode="numeric" pattern="[0-9]*" value="${b ? esc(b.threshold||0) : '2'}"></div>
     </div>
-    <div class="field"><label>Bobines d\u00e9j\u00e0 en stock</label>
-      <input type="text" id="pb-qte" inputmode="numeric" pattern="[0-9]*"></div>
-    <div class="modal-actions"><button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodSaveBobine()">Cr\u00e9er la bobine</button></div>
-    <p class="prod-note">Elle est ajout\u00e9e au stock en cat\u00e9gorie Filament 3D, avec « bobine » pour unit\u00e9. Elle appara\u00eetra ensuite dans la liste des bobines d'un article.</p>
+    <div class="field"><label>D\u00e9lai de livraison de ce fournisseur, en jours</label>
+      <input type="text" id="pb-delai" inputmode="numeric" pattern="[0-9]*"
+             value="${b && isFinite(Number(b.delaiJours)) ? esc(b.delaiJours) : ''}" placeholder="${c.delaiFournisseur}">
+      <p class="prod-note">C'est ce d\u00e9lai qui fixe la date \u00e0 laquelle il faut commander. Vide : ${c.delaiFournisseur} jours, le r\u00e9glage g\u00e9n\u00e9ral.</p></div>
+    ${b ? '' : `<div class="field"><label>Bobines d\u00e9j\u00e0 en stock</label>
+      <input type="text" id="pb-qte" inputmode="numeric" pattern="[0-9]*"></div>`}
+    <div class="modal-actions"><button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodSaveBobine()">${b ? 'Enregistrer' : 'Cr\u00e9er la bobine'}</button></div>
+    ${b ? '' : `<p class="prod-note">Elle est ajout\u00e9e au stock en cat\u00e9gorie Filament 3D, avec \u00ab bobine \u00bb pour unit\u00e9.</p>`}
   `);
   setCloseHook(null);
 }
 
 async function prodSaveBobine(){
   const val = id => { const e = document.getElementById(id); return e ? String(e.value||'').trim() : ''; };
-  const mat = val('pb-mat'), coul = val('pb-coul');
-  const nom = val('pb-nom') || [mat, coul].filter(Boolean).join(' ');
-  if(!nom){ toast('Choisissez une mati\u00e8re ou saisissez un nom'); return; }
+  const delai = val('pb-delai') === '' ? null : Math.max(0, parseInt(val('pb-delai'), 10) || 0);
+  const prix  = parseFloat(val('pb-prix').replace(',', '.')) || 0;
+  const seuil = parseInt(val('pb-seuil'), 10) || 0;
+  const fourn = val('pb-fourn');
+  const exist = window.__prodBobine ? (state.products||[]).find(p=>p.id === window.__prodBobine) : null;
 
-  if(!(state.categories||[]).some(c=>c.name === 'Filament 3D'))
-    (state.categories = state.categories || []).push({name:'Filament 3D', color:'#1B3FB0'});
+  if(exist){
+    const nom = val('pb-nom');
+    if(!nom){ toast('Indiquez un nom'); return; }
+    Object.assign(exist, {name:nom, supplier:fourn, price:prix, threshold:seuil, delaiJours:delai});
+  }else{
+    const mat = val('pb-mat'), coul = val('pb-coul');
+    const nom = val('pb-nom') || [mat, coul].filter(Boolean).join(' ');
+    if(!nom){ toast('Choisissez une mati\u00e8re ou saisissez un nom'); return; }
+    if(!(state.categories||[]).some(x=>x.name === 'Filament 3D'))
+      (state.categories = state.categories || []).push({name:'Filament 3D', color:'#1B3FB0'});
+    const prod = {id: uid(), name: nom, category: 'Filament 3D',
+                  supplier: fourn || 'Bambu Lab', supplierRef: '',
+                  price: prix, threshold: seuil, unit: 'bobine', photo: null, delaiJours: delai};
+    state.products.push(prod);
+    const qte = parseInt(val('pb-qte'), 10) || 0;
+    if(qte > 0) state.movements.push({
+      id: uid(), productId: prod.id, type: 'in', qty: qte,
+      date: new Date().toISOString(), user: state.user || null,
+      source: 'manuel', note: 'Cr\u00e9ation de la bobine'
+    });
+  }
 
-  const prod = {
-    id: uid(), name: nom, category: 'Filament 3D',
-    supplier: val('pb-fourn') || 'Bambu Lab', supplierRef: '',
-    price: parseFloat(val('pb-prix').replace(',', '.')) || 0,
-    threshold: parseInt(val('pb-seuil'), 10) || 0,
-    unit: 'bobine', photo: null
-  };
-  state.products.push(prod);
-
-  const qte = parseInt(val('pb-qte'), 10) || 0;
-  if(qte > 0) state.movements.push({
-    id: uid(), productId: prod.id, type: 'in', qty: qte,
-    date: new Date().toISOString(), user: state.user || null,
-    source: 'manuel', note: 'Cr\u00e9ation de la bobine'
-  });
-
+  window.__prodBobine = null;
   scheduleCloudSave(); setCloseHook(null); closeModal();
-  toast(qte > 0 ? `${nom} \u00b7 ${qte} en stock` : `${nom} cr\u00e9\u00e9e`);
+  toast(exist ? 'Bobine enregistr\u00e9e' : 'Bobine cr\u00e9\u00e9e');
 
   if(window.__retourArticle){
     window.__retourArticle = false;
@@ -5026,7 +5300,7 @@ function prodOpenReglages(){
   const c = prodConf();
   openModal(`
     <h3>Réglages de production</h3>
-    <div class="field"><label>Jours pour recevoir une bobine commandée</label>
+    <div class="field"><label>Jours pour recevoir une bobine — valeur par défaut</label>
       <input type="text" id="pr-fourn" inputmode="numeric" pattern="[0-9]*" value="${c.delaiFournisseur}"></div>
     <div class="field"><label>Jours entre la fin de fabrication et le client</label>
       <input type="text" id="pr-exp" inputmode="numeric" pattern="[0-9]*" value="${c.delaiExpedition}"></div>
@@ -5034,6 +5308,8 @@ function prodOpenReglages(){
       <input type="text" id="pr-manip" inputmode="numeric" pattern="[0-9]*" value="${c.manipulation}"></div>
     <div class="field"><label>Bobines gardées en réserve</label>
       <input type="text" id="pr-marge" inputmode="numeric" pattern="[0-9]*" value="${c.margeBobines}"></div>
+    <div class="field"><label>Montant minimum d'une commande fournisseur, en euros</label>
+      <input type="text" id="pr-mini" inputmode="decimal" value="${c.montantMini || ''}"></div>
     <div class="modal-actions"><button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodSaveReglages()">Enregistrer</button></div>
   `);
   setCloseHook(()=>prodAppliqueReglages());
@@ -5046,7 +5322,8 @@ function prodAppliqueReglages(){
     delaiFournisseur: Math.max(0, v('pr-fourn') || 10),
     delaiExpedition:  Math.max(0, v('pr-exp')   || 6),
     manipulation:     Math.max(1, v('pr-manip') || 10),
-    margeBobines:     isNaN(marge) ? 1 : Math.max(0, marge)
+    margeBobines:     isNaN(marge) ? 1 : Math.max(0, marge),
+    montantMini:      Math.max(0, parseFloat(String((document.getElementById('pr-mini')||{}).value || '').replace(',','.')) || 0)
   };
   scheduleCloudSave();
   return true;
