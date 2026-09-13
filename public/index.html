@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.17)
+  Gestion de stock — stock et production 3D  (v1.20)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.17]</title>
+<title>Gestion de stock [v1.20]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -258,6 +258,18 @@
   .prod-row{background:var(--panel);border:1px solid var(--border);border-radius:12px;
     padding:11px 13px;margin-bottom:9px;}
   .prod-row-nom{font-weight:600;font-size:14px;color:var(--ink);}
+  .reglage-prix{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:12px;
+    font-size:11.5px;color:var(--ink-soft);}
+  .reglage-prix select,.reglage-prix input{font-size:11.5px;color:var(--ink-soft);
+    background:transparent;border:none;border-bottom:1px solid var(--border);border-radius:0;
+    padding:2px;width:auto;min-width:0;-webkit-appearance:none;appearance:none;}
+  .reglage-prix select{padding-right:13px;
+    background-image:linear-gradient(45deg,transparent 50%,var(--ink-soft) 50%),
+      linear-gradient(135deg,var(--ink-soft) 50%,transparent 50%);
+    background-position:calc(100% - 6px) 55%,calc(100% - 2px) 55%;
+    background-size:4px 4px,4px 4px;background-repeat:no-repeat;}
+  .reglage-prix input{width:34px;text-align:center;}
+  .reglage-prix select:focus,.reglage-prix input:focus{outline:none;border-bottom-color:var(--teal);}
   .cmd-etat{flex:none;width:14px;height:14px;border-radius:50%;display:block;
     box-shadow:0 0 0 3px rgba(0,0,0,0.05);}
   .prod-row-sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px;line-height:1.45;}
@@ -336,18 +348,6 @@
   #souvenir-ligne{color:#7A6F62;}
 
   /* ---------- Bandeau Marie-Lee sur l'accueil ---------- */
-  .hero-accueil{position:relative;height:150px;border-radius:var(--radius);overflow:hidden;
-    margin:10px 0 16px 0;background:#101F63;}
-  .hero-accueil::before{content:'';position:absolute;inset:0;
-    background:repeating-conic-gradient(from 0deg at 50% 118%,
-        rgba(255,255,255,0.10) 0deg 2.2deg, rgba(255,255,255,0) 2.2deg 4.8deg),
-      radial-gradient(circle at 50% 116%, rgba(255,206,146,0.55) 0%, rgba(16,31,99,0) 52%);}
-  .hero-accueil img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;}
-  .hero-accueil .cap{position:absolute;left:0;right:0;bottom:0;padding:34px 15px 13px 15px;
-    background:linear-gradient(to top,rgba(10,18,60,0.80),rgba(10,18,60,0));color:#fff;}
-  .hero-accueil .cap b{display:block;font-family:'Fraunces',serif;font-size:20px;
-    font-weight:600;letter-spacing:-0.02em;}
-  .hero-accueil .cap span{display:block;font-size:11.5px;opacity:0.85;margin-top:3px;}
 
   /* ---------- Mot-marque dans la barre du haut ---------- */
   #brand .logo-top{height:18px;width:auto;display:none;margin-right:2px;}
@@ -433,7 +433,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.17</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.20</p>
   </div>
 </div>
 
@@ -443,7 +443,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.17</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.20</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1149,7 +1149,7 @@ function entrerDansApp(v){
     const p2 = document.getElementById('signup-pass2'); if(p2) p2.value='';
     const bn = document.getElementById('brand-name');
     if(bn && account) bn.textContent = account.nom || '';
-    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.17]';
+    majTitre();
     renderTabs();
     renderContent();
     setSyncStatus(window.__syncStatus || 'saved');
@@ -1249,6 +1249,10 @@ function openProfilMenu(){
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:9px;">
+      <button class="menu-ligne" onclick="openNomAtelier()">
+        <span class="ic">✏️</span>
+        <span>Nom de l'atelier<span class="sous">Ce qui s'affiche en haut et signe l'historique</span></span>
+      </button>
       <button class="menu-ligne" onclick="menuChangerCompte()">
         <span class="ic">🔁</span>
         <span>Changer de compte<span class="sous">Ouvrir le stock d'une autre entreprise</span></span>
@@ -1260,6 +1264,58 @@ function openProfilMenu(){
     </div>
   `);
 }
+/* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
+   côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
+const VERSION = 'v1.20';
+function majTitre(){
+  try{
+    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
+  }catch(e){}
+}
+
+function openNomAtelier(){
+  openModal(`
+    <h3>Nom de l'atelier</h3>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.5;margin:0 0 14px 0;">
+      Il apparaît en haut de l'écran, sur l'accueil, et signe chaque mouvement de l'historique.</p>
+    <div class="field"><label>Nom</label>
+      <input type="text" id="na-nom" value="${esc(account && account.nom && account.nom !== account.email ? account.nom : '')}"
+             placeholder="Atelier Mahd" autocomplete="off"></div>
+    <div id="na-etat" style="min-height:16px;font-size:12px;margin-bottom:8px;"></div>
+    <button class="btn btn-primary" id="na-btn" style="width:100%;justify-content:center;" onclick="saveNomAtelier()">Enregistrer</button>
+  `);
+}
+
+async function saveNomAtelier(){
+  const champ = document.getElementById('na-nom');
+  const etat  = document.getElementById('na-etat');
+  const btn   = document.getElementById('na-btn');
+  const nom = (champ ? champ.value : '').trim();
+  const dire = (t, ok)=>{ if(etat){ etat.textContent = t; etat.style.color = ok ? 'var(--green)' : 'var(--rust)'; } };
+  if(!nom){ dire("Indiquez un nom", false); return; }
+  if(!cloudReady()){ dire("Base de données non reliée", false); return; }
+  if(btn) btn.disabled = true;
+  try{
+    const { error } = await withTimeout(sb.auth.updateUser({ data: { entreprise: nom } }), 12000);
+    if(error) throw error;
+    if(account) account.nom = nom;
+    scheduleCloudSave();
+    closeModal();
+    toast('Nom enregistré');
+    const bn = document.getElementById('brand-name');
+    if(bn && account) bn.textContent = account.nom || '';
+    state.user = nomUtilisateur();
+    const av = document.getElementById('user-avatar');
+    if(av) av.textContent = (state.user||'').slice(0,2).toUpperCase();
+    majTitre();
+    renderTabs(); renderContent();
+  }catch(e){
+    dire(messageAuth(e), false);
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+
 function menuChangerCompte(){
   closeModal();
   askConfirm("Changer de compte ? Les données de cette entreprise restent enregistrées sur le serveur.", async ()=>{
@@ -1549,11 +1605,6 @@ function viewAccueil(){
   <div style="padding:2px 2px 4px;">
     <div class="accueil-salut">${salut}${state.user ? ', '+esc(state.user) : ''}</div>
     <div class="accueil-date">${dateTxt.charAt(0).toUpperCase()+dateTxt.slice(1)}</div>
-  </div>
-  <div class="hero-accueil">
-    <img src="/img/atelier.jpg" alt="" loading="lazy"
-         onload="this.style.display='block';">
-    <div class="cap"><b>${esc((account && account.nom) || 'Votre atelier')}</b><span>stock et production</span></div>
   </div>
   <div class="tuiles">
     ${tuile('stock','Stock','M4 7h16M4 12h16M4 17h10',
@@ -4787,18 +4838,20 @@ function prodOpenCommande(id){
       <input type="text" id="pc-client" value="${o?esc(o.client||''):''}" placeholder="Boutique, particulier, salon…"></div>
     <div class="field"><label>À livrer le</label>
       <input type="date" id="pc-date" value="${o?esc(o.dateLivraison||''):prodPlusJours(todayISO(),21)}"></div>
-    <div style="display:flex;gap:10px;">
-      <div class="field" style="flex:1;"><label>Les prix saisis sont</label>
-        <select id="pc-base" onchange="prodRenderTotal()">
-          <option value="ht"  ${o&&o.prixTTC?'':'selected'}>Hors taxes</option>
-          <option value="ttc" ${o&&o.prixTTC?'selected':''}>TTC</option>
-        </select></div>
-      <div class="field" style="flex:1;"><label>TVA en %</label>
-        <input type="text" id="pc-tva" inputmode="decimal" value="${o&&isFinite(Number(o.tva))?esc(o.tva):'20'}" onchange="prodRenderTotal()"></div>
-    </div>
     <div class="field"><label>Pièces commandées</label><div id="pc-lignes"></div>
       <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="prodAjoutLigne()">Ajouter une pièce</button>
-      <div id="pc-total" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);"></div></div>
+      <div class="reglage-prix">
+        <span>Prix saisis</span>
+        <select id="pc-base" onchange="prodRenderTotal()">
+          <option value="ht"  ${o&&o.prixTTC?'':'selected'}>hors taxes</option>
+          <option value="ttc" ${o&&o.prixTTC?'selected':''}>TTC</option>
+        </select>
+        <span>TVA</span>
+        <input type="text" id="pc-tva" inputmode="decimal"
+               value="${o&&isFinite(Number(o.tva))?esc(o.tva):'20'}" onchange="prodRenderTotal()">
+        <span>%</span>
+      </div>
+      <div id="pc-total" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);"></div></div>
     <div class="field"><label>Note</label>
       <input type="text" id="pc-note" value="${o?esc(o.note||''):''}" placeholder="Coloris, finition, contact…"></div>
     ${o?`<div class="checkline"><input type="checkbox" id="pc-fait" ${o.fait?'checked':''}>
