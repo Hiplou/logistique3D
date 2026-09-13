@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.16)
+  Gestion de stock — stock et production 3D  (v1.17)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.16]</title>
+<title>Gestion de stock [v1.17]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -433,7 +433,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.16</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.17</p>
   </div>
 </div>
 
@@ -443,7 +443,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.16</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.17</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1149,7 +1149,7 @@ function entrerDansApp(v){
     const p2 = document.getElementById('signup-pass2'); if(p2) p2.value='';
     const bn = document.getElementById('brand-name');
     if(bn && account) bn.textContent = account.nom || '';
-    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.16]';
+    document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [v1.17]';
     renderTabs();
     renderContent();
     setSyncStatus(window.__syncStatus || 'saved');
@@ -4030,6 +4030,29 @@ function prodPlanning(){
   const val = {sim, alertes: prodBobines(sim), conf: prodConf(), machines: prodMachines().length};
   window.__prodCache = {cle, val};
   return val;
+}
+
+/* Ce qu'affiche la tuile Production sur l'accueil. */
+function prodTuileNombre(){
+  try{ return prodPlanning().sim.commandes.length; }catch(e){ return 0; }
+}
+function prodTuileTexte(){
+  try{
+    const p = prodPlanning();
+    const manque = p.alertes.filter(f=>f.manque > 0).length;
+    const retard = p.sim.enRetard.length;
+    if(!p.sim.commandes.length) return 'aucune commande en cours';
+    const s = p.sim.commandes.length > 1 ? 's' : '';
+    if(manque) return `commande${s} \u00b7 ${manque} bobine${manque>1?'s':''} \u00e0 commander`;
+    if(retard) return `commande${s} \u00b7 ${retard} hors d\u00e9lai`;
+    return `commande${s} \u00b7 d\u00e9lais tenus`;
+  }catch(e){ return 'production'; }
+}
+function prodTuileAlerte(){
+  try{
+    const p = prodPlanning();
+    return p.alertes.some(f=>f.manque > 0) || p.sim.enRetard.length > 0;
+  }catch(e){ return false; }
 }
 
 /* ======================= AFFICHAGE ======================= */
