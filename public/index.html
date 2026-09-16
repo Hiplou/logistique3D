@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.25)
+  Gestion de stock — stock et production 3D  (v1.26)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.25]</title>
+<title>Gestion de stock [v1.26]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -289,6 +289,10 @@
     box-shadow:0 0 0 3px rgba(0,0,0,0.05);}
   .prod-row-sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px;line-height:1.45;}
   .prod-h{font-size:13px;font-weight:600;color:var(--ink-soft);margin:18px 0 8px 0;}
+  .cat-pastille{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;
+    vertical-align:middle;}
+  .palette{display:flex;flex-wrap:wrap;gap:7px;}
+  .palette button{width:26px;height:26px;border-radius:50%;border:none;padding:0;cursor:pointer;}
   .prod-note{font-size:11.5px;color:var(--ink-soft);line-height:1.5;margin:12px 0 0 0;}
   .rp-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);
     border-radius:12px;background:var(--panel);}
@@ -448,7 +452,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.25</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.26</p>
   </div>
 </div>
 
@@ -458,7 +462,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.25</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.26</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -609,10 +613,11 @@ let state = {
   orders: [],        // {id,client,dateLivraison,lignes:[{recipeId,qte}],note,fait}
   sites: [],         // {id,nom,planning{0..6:{actif,de,a}},exceptions[]}
   runs: [],          // {id,orderId,recipeId,printerId,pieces,statut,at,user}
+  artCats: [],       // {id,nom,couleur} — catégories des articles de production
   prod: {},          // reglages : delais, manipulation, marge de bobines
 };
 let activeTab = 'accueil';
-let activeSub = {arrivee:'manuel', sortie:'manuel', produit:'produits', stock:'tous', production:'planning'};
+let activeSub = {arrivee:'manuel', sortie:'manuel', produit:'produits', stock:'tous', production:'planning', articles:'liste'};
 let showOutOfStock = false;
 
 async function safeGet(key, shared){
@@ -634,13 +639,15 @@ function applyData(d){
   state.prod       = (d && d.prod)       || {};
   state.sites      = (d && d.sites)      || [];
   state.runs       = (d && d.runs)       || [];
+  state.artCats    = (d && d.artCats)    || [];
 }
 function currentData(){
   return {
     products: state.products, movements: state.movements,
     categories: state.categories, suppliers: state.suppliers,
     printers: state.printers, recipes: state.recipes,
-    orders: state.orders, prod: state.prod, sites: state.sites, runs: state.runs
+    orders: state.orders, prod: state.prod, sites: state.sites, runs: state.runs,
+    artCats: state.artCats
   };
 }
 
@@ -1305,7 +1312,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.25';
+const VERSION = 'v1.26';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -4345,7 +4352,7 @@ function prodRemedes(){
 function prodPlanning(){
   prodMigration();
   const cle = JSON.stringify([state.orders, state.recipes, state.printers, state.sites,
-                              state.prod, (state.runs||[]).length, state.movements.length]);
+                              state.prod, (state.runs||[]).length, state.movements.length, state.artCats]);
   if(window.__prodCache && window.__prodCache.cle === cle) return window.__prodCache.val;
   const machines = prodMachines();
   const sites = state.sites || [];
@@ -4867,25 +4874,100 @@ function prodDuree(min){
   const h = Math.floor(m/60), r = m%60;
   return (h?`${h} h`:'') + (h&&r?' ':'') + (r?`${r} min`:'');
 }
+/* Cat\u00e9gories propres aux articles de production. Elles ne sont pas celles
+   du stock : on classe ici des recettes d'impression, pas des produits. */
+function prodCats(){ return state.artCats || (state.artCats = []); }
+function prodCat(id){ return prodCats().find(c=>c.id === id) || null; }
+
 function viewProdArticles(){
-  const l = state.recipes || [];
+  const vue = activeSub.articles || 'liste';
+  const onglets = `<div class="subtabs" style="margin-bottom:12px;">
+      <button class="subtab-btn ${vue==='liste'?'active':''}" onclick="setSub('articles','liste')">Articles</button>
+      <button class="subtab-btn ${vue==='cats'?'active':''}" onclick="setSub('articles','cats')">Cat\u00e9gories</button>
+    </div>`;
+  return onglets + (vue === 'cats' ? viewProdCats() : viewProdListeArticles());
+}
+
+function viewProdListeArticles(){
+  const l = (state.recipes || []).slice().sort((a,b)=>{
+    const ca = prodCat(a.catId), cb = prodCat(b.catId);
+    return String(ca?ca.nom:'\uffff').localeCompare(String(cb?cb.nom:'\uffff'))
+        || String(a.nom).localeCompare(String(b.nom));
+  });
   const rows = l.length ? l.map(r=>{
     const f = state.products.find(p=>p.id===r.filamentId);
+    const fini = state.products.find(x=>x.id===r.produitFiniId);
     const m = (r.printerIds||[]).length;
     const pp = Math.max(1, Number(r.piecesParImpression)||1);
-    return `<div class="prod-row" onclick="prodOpenArticle('${r.id}')">
-      <div class="prod-row-nom">${esc(r.nom)}</div>
-      <div class="prod-row-sub">${f?esc(f.name):'Bobine non renseignée'} · ${r.piecesParBobine||'?'} pièces par bobine</div>
-      <div class="prod-row-sub">${prodDuree(r.minutesPiece)} par impression${pp>1?`, ${pp} pièces à la fois`:''} · ${m?`${m} imprimante${m>1?'s':''}`:'aucune imprimante'}</div>
-      <div class="prod-row-sub">${(()=>{ const f = state.products.find(x=>x.id===r.produitFiniId);
-        return f ? `Validée, la pièce entre en stock sous « ${esc(f.name)} »` : 'Aucun produit fini relié';})()}</div>
+    const cat = prodCat(r.catId);
+    return `<div class="prod-row" style="${cat?`border-left:4px solid ${cat.couleur};`:''}" onclick="prodOpenArticle('${r.id}')">
+      <div class="prod-row-nom">${cat?`<span class="cat-pastille" style="background:${cat.couleur};"></span>`:''}${esc(r.nom)}</div>
+      ${cat?`<div class="prod-row-sub" style="color:${cat.couleur};font-weight:600;">${esc(cat.nom)}</div>`:''}
+      <div class="prod-row-sub">${f?esc(f.name):'Bobine non renseign\u00e9e'} \u00b7 ${r.piecesParBobine||'?'} pi\u00e8ces par bobine</div>
+      <div class="prod-row-sub">${prodDuree(r.minutesPiece)} par impression${pp>1?`, ${pp} pi\u00e8ces \u00e0 la fois`:''} \u00b7 ${m?`${m} imprimante${m>1?'s':''}`:'aucune imprimante'}</div>
+      <div class="prod-row-sub">${fini ? `Valid\u00e9e, la pi\u00e8ce entre en stock sous \u00ab ${esc(fini.name)} \u00bb` : 'Aucun produit fini reli\u00e9'}</div>
     </div>`;
-  }).join('') : `<div class="empty">Aucun article. Un article, c'est la recette d'impression d'une pièce : sa bobine, son rendement, sa durée.</div>`;
+  }).join('') : `<div class="empty">Aucun article. Un article, c'est la recette d'impression d'une pi\u00e8ce : sa bobine, son rendement, sa dur\u00e9e.</div>`;
+
+  const bobines = (state.products||[]).filter(p=>p.category === 'Filament 3D')
+    .sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  const listeBob = bobines.length ? `
+    <h3 class="prod-h">Bobines en stock</h3>
+    ${bobines.map(b=>{
+      const d = isFinite(Number(b.delaiJours)) ? Number(b.delaiJours) : null;
+      return `<div class="prod-row" onclick="prodOpenBobine('${b.id}')">
+        <div class="prod-row-nom">${esc(b.name)}</div>
+        <div class="prod-row-sub">${currentStock(b.id)} en stock${b.supplier?` \u00b7 ${esc(b.supplier)}`:''}${b.price?` \u00b7 ${fmtEUR(b.price)}`:''}</div>
+        <div class="prod-row-sub">Livr\u00e9e en ${d === null ? `${prodConf().delaiFournisseur} jours, par d\u00e9faut` : `${d} jour${d>1?'s':''}`}</div>
+      </div>`;
+    }).join('')}` : '';
+
   return `<div style="display:flex;gap:8px;margin-bottom:12px;">
       <button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodOpenArticle()">Nouvel article</button>
       <button class="btn btn-outline" style="flex:1;justify-content:center;" onclick="prodOpenBobine()">Nouvelle bobine</button>
-    </div>${rows}`;
+    </div>${rows}${listeBob}`;
 }
+
+function viewProdCats(){
+  const l = prodCats();
+  const rows = l.length ? l.map(c=>{
+    const n = (state.recipes||[]).filter(r=>r.catId === c.id).length;
+    return `<div class="prod-row" style="border-left:4px solid ${c.couleur};">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="text" value="${esc(c.nom)}" onchange="prodMajCat('${c.id}','nom',this.value)"
+               style="flex:1;min-width:0;font-weight:600;">
+        <button class="btn btn-ghost btn-sm" onclick="prodSupprCat('${c.id}')">\u2715</button>
+      </div>
+      <div class="palette" style="margin-top:8px;">
+        ${CAT_PALETTE.map(col=>`<button type="button" onclick="prodMajCat('${c.id}','couleur','${col}')"
+          style="background:${col};${col===c.couleur?'outline:2px solid var(--ink);outline-offset:2px;':''}"></button>`).join('')}
+      </div>
+      <div class="prod-row-sub" style="margin-top:8px;">${n ? `${n} article${n>1?'s':''} class\u00e9${n>1?'s':''} ici` : 'Aucun article pour l\'instant'}</div>
+    </div>`;
+  }).join('') : `<div class="empty">Aucune cat\u00e9gorie. Elles servent \u00e0 classer vos articles de production et \u00e0 les rep\u00e9rer \u00e0 la couleur.</div>`;
+  return `<button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:12px;" onclick="prodAjoutCat()">Nouvelle cat\u00e9gorie</button>${rows}`;
+}
+
+async function prodAjoutCat(){
+  const l = prodCats();
+  l.push({id: uid(), nom: 'Nouvelle cat\u00e9gorie', couleur: CAT_PALETTE[l.length % CAT_PALETTE.length]});
+  scheduleCloudSave(); renderContent();
+}
+async function prodMajCat(id, champ, val){
+  const c = prodCat(id); if(!c) return;
+  c[champ] = champ === 'nom' ? String(val||'').trim() || c.nom : val;
+  scheduleCloudSave(); renderContent();
+}
+function prodSupprCat(id){
+  const n = (state.recipes||[]).filter(r=>r.catId === id).length;
+  askConfirm(n ? `Supprimer cette cat\u00e9gorie ? ${n} article${n>1?'s':''} perdra${n>1?'ont':''} son classement.`
+               : 'Supprimer cette cat\u00e9gorie ?', async ()=>{
+    state.artCats = prodCats().filter(c=>c.id !== id);
+    (state.recipes||[]).forEach(r=>{ if(r.catId === id) r.catId = null; });
+    scheduleCloudSave(); closeModal(); toast('Cat\u00e9gorie supprim\u00e9e'); renderContent();
+  });
+}
+
 function prodOpenArticle(id){
   prodMigration();
   const r = id ? prodRecette(id) : null;
@@ -4908,6 +4990,13 @@ function prodOpenArticle(id){
     <h3>${r?"Modifier l'article":'Nouvel article'}</h3>
     <div class="field"><label>Nom de l'article</label>
       <input type="text" id="pa-nom" value="${r?esc(r.nom):''}"></div>
+
+    <div class="field"><label>Cat\u00e9gorie</label>
+      <select id="pa-cat">
+        <option value="">\u2014 sans cat\u00e9gorie \u2014</option>
+        ${prodCats().map(c=>`<option value="${c.id}" ${r&&r.catId===c.id?'selected':''}>${esc(c.nom)}</option>`).join('')}
+      </select>
+      ${prodCats().length ? '' : `<p class="prod-note">Aucune cat\u00e9gorie pour l'instant. Cr\u00e9ez-en dans le sous-onglet Cat\u00e9gories.</p>`}</div>
 
     <div class="field"><label>Bobine utilis\u00e9e</label>
       <select id="pa-fil">
@@ -5087,6 +5176,7 @@ function prodAppliqueArticle(silencieux){
   }
   const donnees = {
     nom,
+    catId: (document.getElementById('pa-cat')||{}).value || null,
     produitFiniId: fini || null,
     filamentId: (document.getElementById('pa-fil')||{}).value || null,
     piecesParBobine: Math.max(1, parseInt((document.getElementById('pa-rend')||{}).value, 10) || 1),
