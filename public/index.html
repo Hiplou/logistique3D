@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.26)
+  Gestion de stock — stock et production 3D  (v1.27)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.26]</title>
+<title>Gestion de stock [v1.27]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -452,7 +452,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.26</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.27</p>
   </div>
 </div>
 
@@ -462,7 +462,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.26</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.27</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -977,9 +977,20 @@ function figeFond(actif){
   }
 }
 
-function openModal(html){ __formGen++; figeFond(true); document.getElementById('modal-root').innerHTML =
+/* Témoin de saisie. Une fenêtre refermée enregistre ce qui a été tapé,
+   mais seulement si quelque chose a été tapé : ouvrir puis refermer un
+   formulaire pré-rempli ne doit rien créer. */
+let __modalTouche = false;
+function modalTouche(){ return __modalTouche; }
+function openModal(html){
+  __formGen++; __modalTouche = false; figeFond(true);
+  const racine = document.getElementById('modal-root');
+  racine.innerHTML =
   `<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal" style="position:relative;">
     <button class="modal-close" onclick="closeModal()">✕</button>${html}</div></div>`;
+  const marque = ()=>{ __modalTouche = true; };
+  racine.addEventListener('input', marque);
+  racine.addEventListener('change', marque);
 }
 function askConfirm(message, onYes){
   window.__confirmYes = onYes;
@@ -1312,7 +1323,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.26';
+const VERSION = 'v1.27';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -1330,9 +1341,10 @@ function openNomAtelier(){
     <div id="na-etat" style="min-height:16px;font-size:12px;margin-bottom:8px;"></div>
     <div class="modal-actions"><button class="btn btn-primary" id="na-btn" style="flex:1;justify-content:center;" onclick="saveNomAtelier()">Enregistrer</button></div>
   `);
+  setCloseHook(()=>{ if(modalTouche()) saveNomAtelier(true); });
 }
 
-async function saveNomAtelier(){
+async function saveNomAtelier(silencieux){
   const champ = document.getElementById('na-nom');
   const etat  = document.getElementById('na-etat');
   const btn   = document.getElementById('na-btn');
@@ -1346,7 +1358,7 @@ async function saveNomAtelier(){
     if(error) throw error;
     if(account) account.nom = nom;
     scheduleCloudSave();
-    closeModal();
+    if(!silencieux){ setCloseHook(null); closeModal(); }
     toast('Nom enregistré');
     const bn = document.getElementById('brand-name');
     if(bn && account) bn.textContent = account.nom || '';
@@ -2854,13 +2866,21 @@ function addCategory(){
     <div class="field"><label>Couleur</label>${colorSwatchesHTML(defaultColor, 'newcat-color')}</div>
     <div class="modal-actions"><button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="confirmAddCategory()">Ajouter</button></div>
   `);
+  setCloseHook(()=>{ const e = document.getElementById('newcat-input');
+    if(modalTouche() && e && e.value.trim()) confirmAddCategory(true); });
 }
-async function confirmAddCategory(){
-  const name = document.getElementById('newcat-input').value.trim();
-  const color = document.getElementById('newcat-color').value;
-  if(!name){ toast("Entrez un nom"); return; }
-  if(state.categories.some(c=>c.name===name)){ toast("Cette catégorie existe déjà"); return; }
-  state.categories.push({name, color}); await saveCategories(); closeModal(); toast("Catégorie ajoutée"); renderContent();
+async function confirmAddCategory(silencieux){
+  const champ = document.getElementById('newcat-input');
+  if(!champ) return;
+  const name = champ.value.trim();
+  const color = (document.getElementById('newcat-color')||{}).value;
+  if(!name){ if(!silencieux) toast("Entrez un nom"); return; }
+  if(state.categories.some(c=>c.name===name)){ if(!silencieux) toast("Cette catégorie existe déjà"); return; }
+  state.categories.push({name, color});
+  await saveCategories();
+  if(!silencieux){ setCloseHook(null); closeModal(); }
+  toast("Catégorie ajoutée");
+  if(!silencieux) renderContent();
 }
 function openCategoryEdit(name){
   const c = state.categories.find(x=>x.name===name); if(!c) return;
@@ -4821,17 +4841,23 @@ function prodOpenMachine(){
     <p class="prod-note">Elles prendront les horaires de présence du lieu et seront nommées automatiquement.</p>
     <div class="modal-actions"><button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodAjoutMachines()">Ajouter</button></div>
   `);
+  setCloseHook(()=>{ if(modalTouche()) prodAppliqueMachines(); });
 }
 async function prodAjoutMachines(){
-  const modele = document.getElementById('pm-modele').value;
-  const siteId = document.getElementById('pm-lieu').value;
-  const nb = Math.max(1, Math.min(50, parseInt(document.getElementById('pm-nb').value, 10) || 1));
+  setCloseHook(null); prodAppliqueMachines(); closeModal(); renderContent();
+}
+function prodAppliqueMachines(){
+  const champ = document.getElementById('pm-modele');
+  if(!champ) return;
+  const modele = champ.value;
+  const siteId = (document.getElementById('pm-lieu')||{}).value;
+  const nb = Math.max(1, Math.min(50, parseInt((document.getElementById('pm-nb')||{}).value, 10) || 1));
   state.printers = state.printers || [];
   const deja = state.printers.filter(p=>p.modele===modele).length;
   for(let i = 1; i <= nb; i++)
     state.printers.push({id:uid(), nom:`${modele} #${deja+i}`, modele, siteId, actif:true});
-  scheduleCloudSave(); closeModal();
-  toast(nb>1 ? `${nb} imprimantes ajoutées` : 'Imprimante ajoutée'); renderContent();
+  scheduleCloudSave();
+  toast(nb>1 ? `${nb} imprimantes ajoutées` : 'Imprimante ajoutée');
 }
 function prodOpenMachineEdit(id){
   const p = prodImprimante(id); if(!p) return;
@@ -4845,14 +4871,20 @@ function prodOpenMachineEdit(id){
       <select id="pme-lieu">${prodLieuOptions(p.siteId)}</select></div>
     <div class="modal-actions"><button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodSaveMachine()">Enregistrer</button></div>
   `);
+  setCloseHook(()=>{ if(modalTouche()) prodAppliqueMachine(); });
 }
 async function prodSaveMachine(){
+  setCloseHook(null); prodAppliqueMachine();
+  closeModal(); toast('Imprimante enregistrée'); renderContent();
+}
+function prodAppliqueMachine(){
   const p = prodImprimante(window.__prodMac); if(!p) return;
-  p.nom = document.getElementById('pme-nom').value.trim() || p.nom;
-  p.modele = document.getElementById('pme-modele').value;
-  p.siteId = document.getElementById('pme-lieu').value;
+  const v = id => { const e = document.getElementById(id); return e ? e.value : null; };
+  p.nom = (v('pme-nom')||'').trim() || p.nom;
+  if(v('pme-modele')) p.modele = v('pme-modele');
+  if(v('pme-lieu'))   p.siteId = v('pme-lieu');
   window.__prodMac = null;
-  scheduleCloudSave(); closeModal(); toast('Imprimante enregistrée'); renderContent();
+  scheduleCloudSave();
 }
 async function prodBasculeMachine(id){
   const p = prodImprimante(id); if(!p) return;
@@ -5099,10 +5131,23 @@ function prodOpenBobine(id){
     <div class="modal-actions"><button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodSaveBobine()">${b ? 'Enregistrer' : 'Cr\u00e9er la bobine'}</button></div>
     ${b ? '' : `<p class="prod-note">Elle est ajout\u00e9e au stock en cat\u00e9gorie Filament 3D, avec \u00ab bobine \u00bb pour unit\u00e9.</p>`}
   `);
-  setCloseHook(null);
+  setCloseHook(()=>prodAppliqueBobine(true));
 }
 
 async function prodSaveBobine(){
+  if(!prodAppliqueBobine(false)) return;
+  setCloseHook(null); closeModal();
+  if(window.__retourArticle){
+    window.__retourArticle = false;
+    prodOpenArticle(window.__prodDernierArticle || null);
+  }else{
+    renderContent();
+  }
+}
+
+/* silencieux : appelé à la fermeture de la fenêtre. */
+function prodAppliqueBobine(silencieux){
+  if(silencieux && !modalTouche()) return false;
   const val = id => { const e = document.getElementById(id); return e ? String(e.value||'').trim() : ''; };
   const delai = val('pb-delai') === '' ? null : Math.max(0, parseInt(val('pb-delai'), 10) || 0);
   const prix  = parseFloat(val('pb-prix').replace(',', '.')) || 0;
@@ -5112,12 +5157,12 @@ async function prodSaveBobine(){
 
   if(exist){
     const nom = val('pb-nom');
-    if(!nom){ toast('Indiquez un nom'); return; }
+    if(!nom){ if(!silencieux) toast('Indiquez un nom'); return false; }
     Object.assign(exist, {name:nom, supplier:fourn, price:prix, threshold:seuil, delaiJours:delai});
   }else{
     const mat = val('pb-mat'), coul = val('pb-coul');
     const nom = val('pb-nom') || [mat, coul].filter(Boolean).join(' ');
-    if(!nom){ toast('Choisissez une mati\u00e8re ou saisissez un nom'); return; }
+    if(!nom){ if(!silencieux) toast('Choisissez une mati\u00e8re ou saisissez un nom'); return false; }
     if(!(state.categories||[]).some(x=>x.name === 'Filament 3D'))
       (state.categories = state.categories || []).push({name:'Filament 3D', color:'#1B3FB0'});
     const prod = {id: uid(), name: nom, category: 'Filament 3D',
@@ -5133,15 +5178,9 @@ async function prodSaveBobine(){
   }
 
   window.__prodBobine = null;
-  scheduleCloudSave(); setCloseHook(null); closeModal();
-  toast(exist ? 'Bobine enregistr\u00e9e' : 'Bobine cr\u00e9\u00e9e');
-
-  if(window.__retourArticle){
-    window.__retourArticle = false;
-    prodOpenArticle(window.__prodDernierArticle || null);
-  }else{
-    renderContent();
-  }
+  scheduleCloudSave();
+  if(!silencieux) toast(exist ? 'Bobine enregistr\u00e9e' : 'Bobine cr\u00e9\u00e9e');
+  return true;
 }
 
 /* Enregistre la fiche. silencieux = appel\u00e9 \u00e0 la fermeture de la fen\u00eatre. */
