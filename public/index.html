@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!--
-  Gestion de stock — stock et production 3D  (v1.27)
+  Gestion de stock — stock et production 3D  (v1.28)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.27]</title>
+<title>Gestion de stock [v1.28]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -452,7 +452,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.27</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.28</p>
   </div>
 </div>
 
@@ -462,7 +462,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.27</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.28</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1323,7 +1323,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.27';
+const VERSION = 'v1.28';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -1698,8 +1698,22 @@ function viewAccueil(){
 
 function renderTabs(){
   const lowCount = state.products.filter(p=>currentStock(p.id) < (p.threshold||0) && currentStock(p.id) > 0).length;
+  // La pastille se sert du dernier calcul connu. S'il n'y en a pas, on le
+  // lance en arri\u00e8re-plan : appuyer sur un onglet doit r\u00e9pondre tout de suite.
   let prodCount = 0;
-  try{ prodCount = prodPlanning().alertes.filter(f=>f.manque > 0).length; }catch(e){ prodCount = 0; }
+  try{
+    const c = window.__prodCache;
+    if(c && c.val){
+      prodCount = c.val.alertes.filter(f=>f.manque > 0).length;
+    }else if(!window.__prodCalcule){
+      window.__prodCalcule = true;
+      setTimeout(()=>{
+        try{ prodPlanning(); }catch(e){}
+        window.__prodCalcule = false;
+        try{ renderTabs(); }catch(e){}
+      }, 0);
+    }
+  }catch(e){ prodCount = 0; }
   document.getElementById('tabs').innerHTML = TABS.map(t=>`
     <button class="tab-btn ${activeTab===t.id?'active':''}" onclick="setTab('${t.id}')" style="position:relative;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="${t.icon}"/></svg>
@@ -1712,6 +1726,13 @@ function setTab(id){ activeTab=id; renderTabs(); renderContent(); }
 function setSub(group,id){ activeSub[group]=id; renderContent(); }
 
 function renderContent(){
+  // Garde-fou : si plus aucune fenêtre n'est ouverte, le fond doit être rendu
+  // au doigt. Sans cela, une fenêtre fermée de travers laisserait toute
+  // l'application insensible aux appuis.
+  try{
+    const mr = document.getElementById('modal-root');
+    if(mr && !mr.firstChild) figeFond(false);
+  }catch(e){}
   const c = document.getElementById('content');
   try{ renderVue(c); }
   catch(e){
@@ -3877,7 +3898,19 @@ function prodCreneaux(site, iso){
 }
 function prodCreneau(site, iso){ const l = prodCreneaux(site, iso); return l.length ? l[0] : null; }
 /* Premier instant de présence à partir de ts. null si rien dans l'année. */
+/* Cette fonction est appel\u00e9e des milliers de fois par simulation et balaie
+   les jours un par un. On m\u00e9morise ses r\u00e9sultats : sans cela, l'application
+   se fige quelques secondes \u00e0 chaque rendu d\u00e8s que les commandes s'accumulent. */
+let __memoPresence = {};
 function prodProchainePresence(site, ts){
+  const cle = (site ? site.id : '-') + '|' + (+ts);
+  const vu = __memoPresence[cle];
+  if(vu !== undefined) return vu ? new Date(vu) : null;
+  const r = prodPresenceCalcul(site, ts);
+  __memoPresence[cle] = r ? +r : null;
+  return r;
+}
+function prodPresenceCalcul(site, ts){
   let d = new Date(ts);
   for(let i = 0; i < 400; i++){
     const iso = prodIso(d);
@@ -4034,6 +4067,7 @@ function prodSimule(machines, sites, options){
   const lieuDe = m => (sites||[]).find(s=>s.id===m.siteId) || (sites||[])[0] || null;
   const maintenant = new Date();
 
+  __memoPresence = {};   // les lieux modifi\u00e9s gardent leur identifiant : on repart de z\u00e9ro
   const stock = {};
   (state.products||[]).forEach(p=>{ stock[p.id] = currentStock(p.id); });
 
@@ -4041,6 +4075,8 @@ function prodSimule(machines, sites, options){
   machines.forEach(m=>{ libre[m.id] = new Date(maintenant); });
 
   const restants = prodTravaux();
+  // Tri\u00e9 une fois pour toutes : la boucle n'a plus qu'\u00e0 le parcourir.
+  restants.sort((a,b)=> String(a.limite).localeCompare(String(b.limite)) || a.ordre - b.ordre);
   const jobs = [];
   const conso = {};            // filamentId -> [{date, qte}] pour le plan d'appro
   const attentes = {};         // filamentId -> minutes de machine perdues
@@ -4049,19 +4085,21 @@ function prodSimule(machines, sites, options){
   let garde = 0;
   while(restants.length && garde++ < 20000){
     // La machine libre le plus tôt choisit son prochain travail.
+    // Quelles machines ont encore quelque chose \u00e0 faire : un seul parcours.
+    const occupables = {};
+    for(const j of restants) for(const id of j.compat) occupables[id] = true;
     let mach = null;
-    machines.forEach(m=>{
-      if(!restants.some(j=>j.compat.includes(m.clonDe || m.id))) return;
+    for(const m of machines){
+      if(!occupables[m.clonDe || m.id]) continue;
       if(!mach || libre[m.id] < libre[mach.id]) mach = m;
-    });
+    }
     if(!mach){ sansMachineGlobal = true; break; }
 
     const T = new Date(libre[mach.id]);
-    const possibles = restants.filter(j=>j.compat.includes(mach.clonDe || mach.id));
+    const cleMach = mach.clonDe || mach.id;
+    const possibles = [];
+    for(const j of restants) if(j.compat.includes(cleMach)) possibles.push(j);
     if(!possibles.length){ sansMachineGlobal = true; break; }
-
-    // Les plus urgents d'abord.
-    possibles.sort((a,b)=> String(a.limite).localeCompare(String(b.limite)) || a.ordre - b.ordre);
 
     let choisi = null, attenteJusqu = null;
     if(!tenirCompteMatiere){
@@ -4326,23 +4364,27 @@ function prodClones(n){
 }
 function prodRemedes(){
   const sites = state.sites || [];
-  const base = prodSimule(prodMachines(), sites);
-  if(!base.enRetard.length) return {base, ok:true, pistes:[]};
+  const plan = prodPlanning();
+  if(plan.remedes) return plan.remedes;        // d\u00e9j\u00e0 cherch\u00e9s pour cet \u00e9tat
+  const arr = (plan.appro || {}).arrivees || {};
+  const jouer = (m, s) => prodSimule(m, s, {arrivees: arr});
+  const base = plan.sim;                       // d\u00e9j\u00e0 calcul\u00e9, on ne refait rien
+  if(!base.enRetard.length) return (plan.remedes = {base, ok:true, pistes:[]});
 
   const pistes = [];
   const essais = [
-    {t:'plages', texte:"Rester 2 h de plus chaque jour d'ouverture", sim:()=>prodSimule(prodMachines(), prodElargit(sites, 120))},
-    {t:'plages', texte:"Rester 4 h de plus chaque jour d'ouverture", sim:()=>prodSimule(prodMachines(), prodElargit(sites, 240))},
-    {t:'jours',  texte:"Ouvrir aussi les jours de fermeture, 10 h – 18 h", sim:()=>prodSimule(prodMachines(), prodOuvreToutJour(sites))}
+    {t:'plages', texte:"Rester 2 h de plus chaque jour d'ouverture", sim:()=>jouer(prodMachines(), prodElargit(sites, 120))},
+    {t:'plages', texte:"Rester 4 h de plus chaque jour d'ouverture", sim:()=>jouer(prodMachines(), prodElargit(sites, 240))},
+    {t:'jours',  texte:"Ouvrir aussi les jours de fermeture, 10 h – 18 h", sim:()=>jouer(prodMachines(), prodOuvreToutJour(sites))}
   ];
   for(const e of essais){
     const s = e.sim();
     if(!s.enRetard.length){ pistes.push({texte:e.texte, suffit:true}); break; }
   }
-  for(let n = 1; n <= 6; n++){
+  for(let n = 1; n <= 4; n++){
     const cl = prodClones(n);
     if(!cl.length) break;
-    const s = prodSimule(prodMachines().concat(cl), sites);
+    const s = jouer(prodMachines().concat(cl), sites);
     if(!s.enRetard.length){
       pistes.push({texte:`Ajouter ${n} ${cl[0].modele}${n>1?' de plus':''}`, suffit:true});
       break;
@@ -4353,7 +4395,7 @@ function prodRemedes(){
     for(let n = 1; n <= 6; n++){
       const cl = prodClones(n);
       if(!cl.length) break;
-      const s = prodSimule(prodMachines().concat(cl), prodElargit(sites, 180));
+      const s = jouer(prodMachines().concat(cl), prodElargit(sites, 180));
       if(!s.enRetard.length){
         pistes.push({texte:`Ajouter ${n} ${cl[0].modele} et rester 3 h de plus chaque jour`, suffit:true});
         break;
@@ -4365,7 +4407,7 @@ function prodRemedes(){
   base.enRetard.forEach(x=>{
     if(x.fin) pistes.push({texte:`${x.o.client||'Commande'} : livrable le ${fmtDate(prodPlusJours(x.fin, c.delaiExpedition))} si rien ne change`, suffit:false});
   });
-  return {base, ok:false, pistes};
+  return (plan.remedes = {base, ok:false, pistes});
 }
 
 /* Résultat mis en cache : la simulation tourne à chaque rendu d'onglet. */
@@ -4639,7 +4681,9 @@ async function prodValide(orderId, recipeId, printerId, pieces, ok){
   }else{
     toast(ok ? 'Impression validée' : 'Impression remise dans la file');
   }
-  scheduleCloudSave(); renderContent();
+  scheduleCloudSave();
+  setCloseHook(null); closeModal();   // la fenêtre de choix doit se refermer
+  renderContent();
 }
 function prodAnnuleDerniere(){
   const L = state.runs || [];
