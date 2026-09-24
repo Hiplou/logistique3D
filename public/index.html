@@ -2,8 +2,37 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<script>
+/* R\u00e9v\u00e9lateur d'erreurs : sur iPhone il n'y a pas de console \u00e0 port\u00e9e de main.
+   Toute erreur s'affiche dans un bandeau rouge, avec sa ligne, qu'il suffit
+   de photographier. Un appui le fait dispara\u00eetre. */
+(function(){
+  function montre(msg, ligne, col){
+    try{
+      var b = document.getElementById('bandeau-erreur');
+      if(!b){
+        b = document.createElement('div');
+        b.id = 'bandeau-erreur';
+        b.setAttribute('style','position:fixed;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top));'
+          + 'z-index:2147483600;background:#8E2F3F;color:#fff;font:12px/1.45 -apple-system,system-ui,sans-serif;'
+          + 'padding:10px 12px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.35);white-space:pre-wrap;');
+        b.onclick = function(){ b.remove(); };
+        (document.body || document.documentElement).appendChild(b);
+      }
+      b.textContent = 'Erreur : ' + msg + (ligne ? '\nligne ' + ligne + (col ? ', colonne ' + col : '') : '')
+        + '\n(touchez pour fermer)';
+    }catch(e){}
+  }
+  window.addEventListener('error', function(e){
+    montre(e.message || String(e.error || 'inconnue'), e.lineno, e.colno);
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    var r = e.reason; montre((r && (r.message || r)) || 'promesse rejet\u00e9e');
+  });
+})();
+</script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.28)
+  Gestion de stock — stock et production 3D  (v1.29)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -18,7 +47,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.28]</title>
+<title>Gestion de stock [v1.29]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -107,6 +136,9 @@
   #tabs::-webkit-scrollbar{display:none;}
   .tab-btn{
     flex:none;
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:rgba(255,255,255,0.12);
+    cursor:pointer;
     background:transparent;border:none;color:#BFDAD3;
     padding:9px 12px 11px 12px;font-size:12.5px;font-weight:600;
     display:flex;flex-direction:column;align-items:center;gap:4px;
@@ -273,6 +305,7 @@
   .prod-row{background:var(--panel);border:1px solid var(--border);border-radius:12px;
     padding:11px 13px;margin-bottom:9px;}
   .prod-row-nom{font-weight:600;font-size:14px;color:var(--ink);}
+  html.fenetre-ouverte, html.fenetre-ouverte body{overflow:hidden;}
   .reglage-prix{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:12px;
     font-size:11.5px;color:var(--ink-soft);}
   .reglage-prix select,.reglage-prix input{font-size:11.5px;color:var(--ink-soft);
@@ -452,7 +485,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.28</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.29</p>
   </div>
 </div>
 
@@ -462,7 +495,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.28</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.29</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -957,24 +990,22 @@ function swatchChanged(inputId){
 /* iOS fait défiler la page derrière la fenêtre dès que celle-ci arrive en
    butée. On fige donc le fond pendant l'ouverture, en mémorisant la position
    pour la restituer à la fermeture. */
-let __defilFige = null;
+/* Pendant qu'une fenêtre est ouverte, la page derrière ne doit pas défiler.
+   On se contente d'une classe qui coupe le défilement : l'ancienne méthode
+   (passer la page en position fixe) déréglait la zone de toucher sur iPhone,
+   l'écran montrant un endroit et le doigt en touchant un autre. */
 function figeFond(actif){
-  const b = document.body;
-  if(actif){
-    if(__defilFige !== null) return;          // une fenêtre en remplace une autre
-    __defilFige = window.scrollY || window.pageYOffset || 0;
-    b.style.position = 'fixed';
-    b.style.top   = (-__defilFige) + 'px';
-    b.style.left  = '0';
-    b.style.right = '0';
-    b.style.width = '100%';
-  }else{
-    if(__defilFige === null) return;
-    const y = __defilFige; __defilFige = null;
-    b.style.position = ''; b.style.top = ''; b.style.left = '';
-    b.style.right = ''; b.style.width = '';
-    window.scrollTo(0, y);
-  }
+  try{
+    document.documentElement.classList.toggle('fenetre-ouverte', !!actif);
+    // Nettoyage des réglages laissés par les versions précédentes.
+    const b = document.body;
+    if(b.style.position === 'fixed'){
+      const y = -parseInt(b.style.top || '0', 10) || 0;
+      b.style.position = ''; b.style.top = ''; b.style.left = '';
+      b.style.right = ''; b.style.width = '';
+      window.scrollTo(0, y);
+    }
+  }catch(e){}
 }
 
 /* Témoin de saisie. Une fenêtre refermée enregistre ce qui a été tapé,
@@ -1323,7 +1354,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.28';
+const VERSION = 'v1.29';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
