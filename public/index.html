@@ -30,9 +30,61 @@
     var r = e.reason; montre((r && (r.message || r)) || 'promesse rejet\u00e9e');
   });
 })();
+
+/* Diagnostic des appuis, actif seulement avec ?diag=1 dans l'adresse.
+   Pour chaque appui : l'\u00e9l\u00e9ment r\u00e9ellement sous le doigt, et si le clic
+   est bien parti. Le compteur tourne quatre fois par seconde ; s'il se fige,
+   l'application est occup\u00e9e et n'\u00e9coute plus. */
+(function(){
+  if(!/[?&]diag=1/.test(location.search)) return;
+  var battement = 0, lignes = [], panneau = null, dernierAppui = 0;
+  function decrit(el){
+    if(!el || !el.tagName) return 'rien';
+    var s = el.tagName.toLowerCase();
+    if(el.id) s += '#' + el.id;
+    var c = (el.className && typeof el.className === 'string') ? el.className.trim().split(/\s+/)[0] : '';
+    if(c) s += '.' + c;
+    var t = (el.textContent || '').trim().replace(/\s+/g,' ').slice(0, 18);
+    if(t) s += ' \u00ab' + t + '\u00bb';
+    return s;
+  }
+  function ecrit(){
+    if(!panneau && document.body){
+      panneau = document.createElement('div');
+      panneau.id = 'panneau-diag';
+      panneau.setAttribute('style','position:fixed;left:6px;right:6px;bottom:calc(40px + env(safe-area-inset-bottom));'
+        + 'z-index:2147483500;background:rgba(0,0,0,.84);color:#9FE;font:10.5px/1.4 ui-monospace,Menlo,monospace;'
+        + 'padding:8px;border-radius:8px;pointer-events:none;white-space:pre-wrap;');
+      document.body.appendChild(panneau);
+    }
+    if(!panneau) return;
+    var pf = document.body ? getComputedStyle(document.body).position : '?';
+    var mr = document.getElementById('modal-root');
+    panneau.textContent = 'DIAG  battement ' + battement
+      + '  |  page:' + pf + '  |  fen\u00eatre:' + (mr && mr.firstChild ? 'OUVERTE' : 'ferm\u00e9e')
+      + '  |  classe:' + (document.documentElement.classList.contains('fenetre-ouverte') ? 'oui' : 'non')
+      + '\n' + (lignes.length ? lignes.join('\n') : 'touchez un bouton\u2026');
+  }
+  setInterval(function(){ battement++; ecrit(); }, 250);
+  function note(type, x, y, cible){
+    var sous = (x != null) ? document.elementFromPoint(x, y) : null;
+    lignes.unshift(type + ' ' + (x != null ? Math.round(x)+','+Math.round(y) : '') + '\n   sous le doigt : ' + decrit(sous)
+      + '\n   cible        : ' + decrit(cible));
+    lignes = lignes.slice(0, 4);
+    ecrit();
+  }
+  document.addEventListener('touchstart', function(e){
+    dernierAppui = Date.now();
+    var t = e.touches && e.touches[0];
+    note('APPUI', t ? t.clientX : null, t ? t.clientY : null, e.target);
+  }, {capture:true, passive:true});
+  document.addEventListener('click', function(e){
+    note('CLIC  (' + (Date.now() - dernierAppui) + ' ms)', e.clientX, e.clientY, e.target);
+  }, true);
+})();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.29)
+  Gestion de stock — stock et production 3D  (v1.30)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -47,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.29]</title>
+<title>Gestion de stock [v1.30]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -485,7 +537,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.29</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.30</p>
   </div>
 </div>
 
@@ -495,7 +547,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.29</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.30</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1354,7 +1406,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.29';
+const VERSION = 'v1.30';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
