@@ -84,7 +84,7 @@
 })();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.37)
+  Gestion de stock — stock et production 3D  (v1.38)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -99,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.37]</title>
+<title>Gestion de stock [v1.38]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -551,7 +551,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.37</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.38</p>
   </div>
 </div>
 
@@ -561,7 +561,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.37</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.38</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1435,7 +1435,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.37';
+const VERSION = 'v1.38';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -4175,6 +4175,18 @@ function prodVerifieBudget(){
     throw new Error("Calcul de production interrompu : trop long. V\u00e9rifiez les quantit\u00e9s, prix et d\u00e9lais saisis.");
 }
 
+/* Imprimantes capables de produire l'article r pour la commande o. Si la
+   commande est r\u00e9serv\u00e9e \u00e0 un lieu, seules les machines de ce lieu comptent. */
+function prodCompatPour(o, r){
+  const ids = (r && r.printerIds) || [];
+  if(!o || !o.siteId) return ids.slice();
+  return ids.filter(id=>{ const p = prodImprimante(id); return p && p.siteId === o.siteId; });
+}
+function prodMachinesPour(o, r){
+  return prodCompatPour(o, r).filter(id=>{ const p = prodImprimante(id); return p && p.actif !== false; });
+}
+function prodNomLieu(id){ const s = (state.sites||[]).find(x=>x.id === id); return s ? s.nom : ''; }
+
 function prodTravaux(){
   const c = prodConf();
   const travaux = [];
@@ -4195,7 +4207,7 @@ function prodTravaux(){
           conso: r.filamentId ? pieces / Math.max(1, Number(r.piecesParBobine) || 1) : 0,
           duree: Math.max(1, Number(r.minutesPiece) || 1),
           manip: prodManip(r),
-          compat: (r.printerIds || []).slice(),
+          compat: prodCompatPour(o, r),
           pieces, limite, rang, ordre: travaux.length
         });
       }
@@ -4349,7 +4361,7 @@ function prodSimule(machines, sites, options){
     const sansMachine = (o.lignes||[]).some(l=>{
       const r = prodRecette(l.recipeId);
       if(!r || prodReste(o,l) <= 0) return false;
-      return !(r.printerIds||[]).some(id=>{ const p = prodImprimante(id); return p && p.actif !== false; });
+      return !prodMachinesPour(o, r).length;
     });
     let fin = null, debut = null;
     siens.forEach(j=>{
@@ -4535,15 +4547,17 @@ function prodOuvreToutJour(sites){
   });
   return copie;
 }
-function prodClones(n){
-  // On duplique la machine la plus sollicitée parmi celles des commandes en retard.
+function prodClones(n, siteId){
+  // On duplique la machine la plus sollicit\u00e9e ; si la commande est r\u00e9serv\u00e9e \u00e0 un
+  // lieu, la machine ajout\u00e9e doit l'\u00eatre dans ce lieu.
   const charge = {};
   prodCommandesEnCours().forEach(o=>(o.lignes||[]).forEach(l=>{
     const r = prodRecette(l.recipeId); if(!r) return;
     (r.printerIds||[]).forEach(id=>{ charge[id] = (charge[id]||0) + (Number(l.qte)||0) * (Number(r.minutesPiece)||0); });
   }));
   let ref = null, max = -1;
-  prodMachines().forEach(m=>{ if((charge[m.id]||0) > max){ max = charge[m.id]||0; ref = m; } });
+  prodMachines().filter(m=>!siteId || m.siteId === siteId)
+    .forEach(m=>{ if((charge[m.id]||0) > max){ max = charge[m.id]||0; ref = m; } });
   if(!ref) return [];
   const out = [];
   for(let i = 1; i <= n; i++)
@@ -4575,8 +4589,12 @@ function prodRemedesCalcul(){
       (o.lignes||[]).forEach(l=>{
         const r = prodRecette(l.recipeId);
         if(!r || prodReste(o, l) <= 0) return;
-        const capable = (r.printerIds||[]).some(id=>{ const p = prodImprimante(id); return p && p.actif !== false; });
-        if(!capable) pistes.push({
+        const capable = prodMachinesPour(o, r).length > 0;
+        if(!capable && o.siteId && (r.printerIds||[]).length) pistes.push({
+          texte: `\u00ab ${nom} \u00bb est r\u00e9serv\u00e9e \u00e0 ${prodNomLieu(o.siteId)}, o\u00f9 aucune machine ne sait faire \u00ab ${r.nom} \u00bb`,
+          detail: "Changez le lieu de la commande, ou rattachez \u00e0 cet article une imprimante de ce lieu.",
+          libelle: 'Changer le lieu', action: `prodOpenCommande('${o.id}')`, suffit: false, grave: true});
+        else if(!capable) pistes.push({
           texte: `« ${nom} » : l'article « ${r.nom} » n'est rattaché à aucune imprimante en service`,
           detail: "Indiquez quelles machines savent le produire : le planning pourra alors le prendre en compte.",
           libelle: "Corriger l'article", action: `prodOpenArticle('${r.id}')`, suffit: false, grave: true});
@@ -4611,12 +4629,12 @@ function prodRemedesCalcul(){
     }else{
       const lignesMachines = new Set();
       (o.lignes||[]).forEach(l=>{ const r = prodRecette(l.recipeId);
-        if(r) (r.printerIds||[]).forEach(id=>{ const p = prodImprimante(id); if(p && p.actif !== false) lignesMachines.add(id); }); });
+        if(r) prodMachinesPour(o, r).forEach(id=>lignesMachines.add(id)); });
       const M = Math.max(1, lignesMachines.size);
       let extra = Math.max(1, Math.ceil(M * necessaire / restant) - M);
       let trouve = null;
       for(let essai = 0; essai < 3 && extra <= 60; essai++){
-        const cl = prodClones(extra);
+        const cl = prodClones(extra, o.siteId);
         if(!cl.length) break;
         const s = jouer(prodMachines().concat(cl), sites);
         const encore = s.enRetard.some(y=>y.o.id === o.id);
@@ -4624,7 +4642,7 @@ function prodRemedesCalcul(){
         extra = Math.ceil(extra * 1.25) + 1;
       }
       if(trouve) pistes.push({
-        texte: `« ${nom} » : ajouter ${trouve.n} ${trouve.modele}`,
+        texte: `« ${nom} » : ajouter ${trouve.n} ${trouve.modele}${o.siteId ? ' à ' + prodNomLieu(o.siteId) : ''}`,
         detail: `Avec ${M + trouve.n} machines au lieu de ${M}, la commande est prête à temps (vérifié par simulation).`,
         suffit: true});
       else pistes.push({
@@ -4823,9 +4841,18 @@ function prodAnalyseDonnees(){
         "Valeur inhabituelle, vérifiez-la.", "Vérifier l'article", `prodOpenArticle('${r.id}')`);
   });
 
-  // Commandes : quantités démesurées, lignes orphelines, dates manquantes
+  // Commandes : quantit\u00e9s d\u00e9mesur\u00e9es, lignes orphelines, dates manquantes
   let impressions = 0;
   prodCommandesEnCours().forEach(o=>{
+    if(o.siteId && !(state.sites||[]).some(s=>s.id === o.siteId))
+      ajoute(true, `Commande \u00ab ${o.client||'sans client'} \u00bb : lieu supprim\u00e9`,
+        "Elle \u00e9tait r\u00e9serv\u00e9e \u00e0 un lieu qui n'existe plus.", 'Choisir un lieu', `prodOpenCommande('${o.id}')`);
+    (o.lignes||[]).forEach(l=>{
+      const r = prodRecette(l.recipeId);
+      if(o.siteId && r && prodReste(o,l) > 0 && (r.printerIds||[]).length && !prodMachinesPour(o, r).length)
+        ajoute(true, `Commande \u00ab ${o.client||'sans client'} \u00bb : rien pour \u00ab ${r.nom} \u00bb \u00e0 ${prodNomLieu(o.siteId)}`,
+          "Le lieu impos\u00e9 n'a aucune machine capable de produire cet article.", 'Ouvrir la commande', `prodOpenCommande('${o.id}')`);
+    });
     if(!o.dateLivraison)
       ajoute(false, `Commande « ${o.client||'sans client'} » : pas de date de livraison`,
         "Le planning ne peut pas savoir si elle est en retard.", 'Ouvrir la commande',
@@ -5115,11 +5142,12 @@ function viewProdPlanning(){
     const n = (x.o.lignes||[]).reduce((t,l)=>t+(Number(l.qte)||0),0);
     const fait = n - x.resteTotal;
     let etat;
-    if(x.sansMachine) etat = 'Aucune imprimante compatible en service';
+    if(x.sansMachine) etat = x.o.siteId ? `Aucune imprimante compatible \u00e0 ${prodNomLieu(x.o.siteId)}` : 'Aucune imprimante compatible en service';
     else if(x.retard) etat = `Prête le ${fmtDate(x.fin)}, soit ${x.jourRetard} jour${x.jourRetard>1?'s':''} trop tard`;
     else etat = `Prête le ${fmtDate(x.fin)}, limite le ${fmtDate(x.limite)}`;
     return `<div class="prod-row" style="border-left:3px solid ${coul};" onclick="prodOpenCommande('${x.o.id}')">
-      <div class="prod-row-nom">${esc(x.o.client||'Sans client')} · à livrer le ${fmtDate(x.o.dateLivraison)}</div>
+      <div class="prod-row-nom">${esc(x.o.client||'Sans client')} · à livrer le ${fmtDate(x.o.dateLivraison)}${
+        x.o.siteId ? ` · ${esc(prodNomLieu(x.o.siteId))}` : ''}</div>
       <div class="prod-row-sub">${fait>0?`${fait} sur ${n} pièce${n>1?'s':''} déjà imprimée${fait>1?'s':''}`:`${n} pièce${n>1?'s':''}`} · ${(x.minutes/60).toFixed(1)} h restantes · démarrage le ${fmtDate(x.debut)}</div>
       <div class="prod-row-sub" style="color:${coul};font-weight:600;">${etat}</div>
     </div>`;
@@ -5635,10 +5663,11 @@ async function prodSaveLieu(){
 
 function prodSupprLieu(id){
   setCloseHook(null); window.__prodLieu = null;
-  askConfirm("Supprimer ce lieu ? Ses imprimantes seront rattachées au premier lieu restant.", async ()=>{
+  askConfirm("Supprimer ce lieu ? Ses imprimantes seront rattach\u00e9es au premier lieu restant, et les commandes qui lui \u00e9taient r\u00e9serv\u00e9es pourront \u00eatre faites partout.", async ()=>{
     state.sites = (state.sites||[]).filter(s=>s.id!==id);
     prodMigration();
     (state.printers||[]).forEach(p=>{ if(p.siteId === id) p.siteId = (state.sites[0]||{}).id; });
+    (state.orders||[]).forEach(o=>{ if(o.siteId === id) o.siteId = null; });
     scheduleCloudSave(); closeModal(); toast('Lieu supprimé'); renderContent();
   });
 }
@@ -6074,6 +6103,7 @@ function viewProdCommandes(){
       <div style="flex:1;min-width:0;">
         <div class="prod-row-nom">${esc(o.client||'Sans client')}</div>
         <div class="prod-row-sub">\u00c0 livrer le ${fmtDate(o.dateLivraison)} \u00b7 ${n} pi\u00e8ce${n>1?'s':''}${
+          o.siteId ? ` \u00b7 ${esc(prodNomLieu(o.siteId) || 'lieu supprim\u00e9')}` : ''}${
           prodTotal(o).saisi ? ` \u00b7 ${fmtEUR(prodTotal(o).ttc)} TTC` : ''}</div>
         <div class="prod-row-sub" style="color:${e.coul};font-weight:600;">${e.txt}</div>
       </div>
@@ -6093,6 +6123,12 @@ function prodOpenCommande(id){
       <input type="text" id="pc-client" value="${o?esc(o.client||''):''}" placeholder="Boutique, particulier, salon…"></div>
     <div class="field"><label>À livrer le</label>
       <input type="date" id="pc-date" value="${o?esc(o.dateLivraison||''):prodPlusJours(todayISO(),21)}"></div>
+    <div class="field"><label>Lieu de production</label>
+      <select id="pc-lieu">
+        <option value="">Tous les lieux</option>
+        ${(state.sites||[]).map(s=>`<option value="${s.id}" ${o&&o.siteId===s.id?'selected':''}>${esc(s.nom)}</option>`).join('')}
+      </select>
+      <p class="prod-note" style="margin-top:6px;">Si un lieu est choisi, la commande ne sera planifi\u00e9e que sur ses machines.</p></div>
     <div class="field"><label>Pièces commandées</label><div id="pc-lignes"></div>
       <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="prodAjoutLigne()">Ajouter une pièce</button>
       <div class="reglage-prix">
@@ -6207,7 +6243,8 @@ function prodAppliqueCommande(silencieux){
     prixTTC: baseEl ? baseEl.value === 'ttc' : false,
     tva: tvaEl && isFinite(parseFloat(String(tvaEl.value).replace(',','.')))
          ? parseFloat(String(tvaEl.value).replace(',','.')) : 20,
-    note: (document.getElementById('pc-note')||{}).value.trim()
+    note: (document.getElementById('pc-note')||{}).value.trim(),
+    siteId: (document.getElementById('pc-lieu')||{}).value || null
   };
   state.orders = state.orders || [];
   const ex = window.__prodCmd ? state.orders.find(o=>o.id===window.__prodCmd) : null;
