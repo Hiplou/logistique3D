@@ -84,7 +84,7 @@
 })();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.33)
+  Gestion de stock — stock et production 3D  (v1.35)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -99,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.33]</title>
+<title>Gestion de stock [v1.35]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -393,6 +393,18 @@
   table.rp tr.rp-lieu th,table.rp tr.rp-lieu td{background:var(--teal-dark);color:#EDF0FC;
     font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:5px 8px;}
   table.rp tr.rp-lieu th.rp-mac{background:var(--teal-dark);color:#EDF0FC;}
+  details.jour{background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    margin-bottom:9px;overflow:hidden;}
+  details.jour summary{list-style:none;cursor:pointer;padding:11px 13px;display:flex;flex-direction:column;gap:2px;}
+  details.jour summary::-webkit-details-marker{display:none;}
+  details.jour[open] summary{border-bottom:1px solid var(--border);background:var(--teal-pale);}
+  .jour-nom{font-weight:600;font-size:14px;color:var(--ink);}
+  .jour-chiffres{font-size:12px;color:var(--ink-soft);}
+  .jour-ligne{display:flex;gap:10px;padding:9px 13px;border-bottom:1px solid var(--border);cursor:pointer;}
+  .jour-ligne:last-child{border-bottom:none;}
+  .jour-h{font-weight:700;color:var(--teal);font-size:13px;min-width:42px;flex:none;}
+  .jour-quoi{display:flex;flex-direction:column;gap:2px;min-width:0;font-size:13px;color:var(--ink);}
+  .jour-quoi span{font-size:11.5px;color:var(--ink-soft);}
   .rp-chip{border-radius:7px;padding:4px 6px;margin-bottom:4px;line-height:1.3;
     font-size:10.5px;word-break:break-word;}
   .rp-chip span{display:block;font-size:9.5px;opacity:.75;}
@@ -537,7 +549,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.33</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.35</p>
   </div>
 </div>
 
@@ -547,7 +559,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.33</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.35</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1416,7 +1428,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.33';
+const VERSION = 'v1.35';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -4175,21 +4187,36 @@ function prodSimule(machines, sites, options){
   const libre = {};
   machines.forEach(m=>{ libre[m.id] = new Date(maintenant); });
 
-  const restants = prodTravaux();
-  // Tri\u00e9 une fois pour toutes : la boucle n'a plus qu'\u00e0 le parcourir.
-  restants.sort((a,b)=> String(a.limite).localeCompare(String(b.limite)) || a.ordre - b.ordre);
+  // Les impressions d'une m\u00eame ligne de commande sont interchangeables : on
+  // les range en files. La boucle ne compare plus que quelques files au lieu
+  // de milliers d'impressions \u2014 c'est ce qui rend les grosses commandes
+  // calculables sur un t\u00e9l\u00e9phone.
+  const files = [];
+  const index = {};
+  prodTravaux().forEach(j=>{
+    const cle = j.orderId + '|' + j.recipeId;
+    let f = index[cle];
+    if(!f){
+      f = index[cle] = {travaux: [], compat: j.compat, filamentId: j.filamentId,
+                        limite: j.limite, ordre: j.ordre};
+      files.push(f);
+    }
+    f.travaux.push(j);
+  });
+  files.sort((a,b)=> String(a.limite).localeCompare(String(b.limite)) || a.ordre - b.ordre);
+  let resteTotal = files.reduce((t,f)=>t + f.travaux.length, 0);
+
   const jobs = [];
   const conso = {};            // filamentId -> [{date, qte}] pour le plan d'appro
   const attentes = {};         // filamentId -> minutes de machine perdues
   let impossible = false, sansMachineGlobal = false;
 
   let garde = 0;
-  while(restants.length && garde++ < 20000){
+  while(resteTotal > 0 && garde++ < 40000){
     if((garde & 63) === 0) prodVerifieBudget();
-    // La machine libre le plus tôt choisit son prochain travail.
-    // Quelles machines ont encore quelque chose \u00e0 faire : un seul parcours.
+    // Quelles machines ont encore quelque chose \u00e0 faire.
     const occupables = {};
-    for(const j of restants) for(const id of j.compat) occupables[id] = true;
+    for(const f of files) if(f.travaux.length) for(const id of f.compat) occupables[id] = true;
     let mach = null;
     for(const m of machines){
       if(!occupables[m.clonDe || m.id]) continue;
@@ -4200,42 +4227,45 @@ function prodSimule(machines, sites, options){
     const T = new Date(libre[mach.id]);
     const cleMach = mach.clonDe || mach.id;
     const possibles = [];
-    for(const j of restants) if(j.compat.includes(cleMach)) possibles.push(j);
+    for(const f of files) if(f.travaux.length && f.compat.includes(cleMach)) possibles.push(f);
     if(!possibles.length){ sansMachineGlobal = true; break; }
 
-    let choisi = null, attenteJusqu = null;
+    let fileChoisie = null, attenteJusqu = null;
     if(!tenirCompteMatiere){
-      choisi = possibles[0];
+      fileChoisie = possibles[0];
     }else{
       const bloques = [];
-      for(const j of possibles){
+      for(const f of possibles){
+        const j = f.travaux[0];
         if(!j.filamentId || prodDispo(j.filamentId, T, stock, arrivees) >= j.conso - 1e-9){
-          if(!bloques.length){ choisi = j; break; }     // rien de plus urgent n'attend
-          // On glisse ce travail seulement s'il rend la machine avant l'arrivée attendue.
+          if(!bloques.length){ fileChoisie = f; break; }   // rien de plus urgent n'attend
+          // On glisse ce travail seulement s'il rend la machine avant l'arriv\u00e9e attendue.
           const finImp = new Date(T.getTime() + j.duree * 60000);
           const vid = prodProchainePresence(lieuDe(mach), finImp);
           const rendu = vid ? new Date(vid.getTime() + j.manip * 60000) : null;
-          if(rendu && bloques[0].arrivee && rendu <= bloques[0].arrivee){ choisi = j; break; }
-          continue;                                     // sinon on laisse la machine libre
+          if(rendu && bloques[0].arrivee && rendu <= bloques[0].arrivee){ fileChoisie = f; break; }
+          continue;
         }
         const arr = prodProchaineArrivee(j.filamentId, T, arrivees);
-        bloques.push({job:j, arrivee: arr ? new Date(arr) : null});
+        bloques.push({file: f, arrivee: arr ? new Date(arr) : null});
       }
-      if(!choisi){
+      if(!fileChoisie){
         const avecDate = bloques.filter(b=>b.arrivee);
         if(!avecDate.length){ impossible = true; break; }
         attenteJusqu = avecDate.reduce((min,b)=> !min || b.arrivee < min ? b.arrivee : min, null);
       }
     }
 
-    if(!choisi){
+    if(!fileChoisie){
       const perdu = (attenteJusqu - T) / 60000;
-      const f = possibles.find(j=>j.filamentId);
+      const f = possibles.find(x=>x.filamentId);
       if(f) attentes[f.filamentId] = (attentes[f.filamentId] || 0) + Math.max(0, perdu);
       libre[mach.id] = new Date(attenteJusqu);
       continue;
     }
 
+    const choisi = fileChoisie.travaux.shift();
+    resteTotal--;
     const depart = new Date(T);
     const finImp = new Date(depart.getTime() + choisi.duree * 60000);
     const vidage = prodProchainePresence(lieuDe(mach), finImp);
@@ -4252,7 +4282,6 @@ function prodSimule(machines, sites, options){
       printerId: mach.id, machine: mach.nom, virtuelle: !!mach.clonDe,
       depart, finImp, vidage, libere
     }));
-    restants.splice(restants.indexOf(choisi), 1);
   }
 
   // Regroupement par commande.
@@ -4469,50 +4498,103 @@ function prodClones(n){
 function prodRemedesCalcul(){
   const sites = state.sites || [];
   const plan = prodPlanning();
-  if(plan.remedes) return plan.remedes;        // d\u00e9j\u00e0 cherch\u00e9s pour cet \u00e9tat
+  if(plan.remedes) return plan.remedes;        // déjà cherchés pour cet état
   const arr = (plan.appro || {}).arrivees || {};
   const jouer = (m, s) => prodSimule(m, s, {arrivees: arr});
-  const base = plan.sim;                       // d\u00e9j\u00e0 calcul\u00e9, on ne refait rien
-  __prodLimite = Date.now() + 3000;
+  const base = plan.sim;                       // déjà calculé, on ne refait rien
+  __prodLimite = Date.now() + 4000;
   if(!base.enRetard.length) return (plan.remedes = {base, ok:true, pistes:[]});
 
+  const c = prodConf();
   const pistes = [];
-  const essais = [
-    {t:'plages', texte:"Rester 2 h de plus chaque jour d'ouverture", sim:()=>jouer(prodMachines(), prodElargit(sites, 120))},
-    {t:'plages', texte:"Rester 4 h de plus chaque jour d'ouverture", sim:()=>jouer(prodMachines(), prodElargit(sites, 240))},
-    {t:'jours',  texte:"Ouvrir aussi les jours de fermeture, 10 h – 18 h", sim:()=>jouer(prodMachines(), prodOuvreToutJour(sites))}
-  ];
-  for(const e of essais){
-    const s = e.sim();
-    if(!s.enRetard.length){ pistes.push({texte:e.texte, suffit:true}); break; }
-  }
-  for(let n = 1; n <= 4; n++){
-    const cl = prodClones(n);
-    if(!cl.length) break;
-    const s = jouer(prodMachines().concat(cl), sites);
-    if(!s.enRetard.length){
-      pistes.push({texte:`Ajouter ${n} ${cl[0].modele}${n>1?' de plus':''}`, suffit:true});
-      break;
+  const aujourd = prodAt(todayISO(), '12:00');
+  const jours = iso => (prodAt(iso, '12:00') - aujourd) / 86400000;
+
+  base.enRetard.forEach(x=>{
+    const o = x.o;
+    const nom = o.client || 'Commande';
+
+    // 1. Aucune machine ne sait faire la pièce : c'est une donnée à corriger.
+    if(x.sansMachine){
+      (o.lignes||[]).forEach(l=>{
+        const r = prodRecette(l.recipeId);
+        if(!r || prodReste(o, l) <= 0) return;
+        const capable = (r.printerIds||[]).some(id=>{ const p = prodImprimante(id); return p && p.actif !== false; });
+        if(!capable) pistes.push({
+          texte: `« ${nom} » : l'article « ${r.nom} » n'est rattaché à aucune imprimante en service`,
+          detail: "Indiquez quelles machines savent le produire : le planning pourra alors le prendre en compte.",
+          libelle: "Corriger l'article", action: `prodOpenArticle('${r.id}')`, suffit: false, grave: true});
+        const min = Number(r.minutesPiece);
+        if(!isFinite(min) || min <= 0) pistes.push({
+          texte: `« ${nom} » : l'article « ${r.nom} » n'a pas de durée d'impression`,
+          detail: "Sans durée, impossible de savoir combien de temps il occupe une machine.",
+          libelle: "Corriger l'article", action: `prodOpenArticle('${r.id}')`, suffit: false, grave: true});
+      });
+      return;
     }
-  }
-  // Combinaison : machines en plus ET plages élargies.
-  if(!pistes.length){
-    for(let n = 1; n <= 6; n++){
-      const cl = prodClones(n);
-      if(!cl.length) break;
-      const s = jouer(prodMachines().concat(cl), prodElargit(sites, 180));
-      if(!s.enRetard.length){
-        pistes.push({texte:`Ajouter ${n} ${cl[0].modele} et rester 3 h de plus chaque jour`, suffit:true});
-        break;
+
+    if(!x.fin) return;
+    const restant = jours(x.limite);
+    const necessaire = jours(x.fin);
+
+    // 2. Livraison partielle : ce qui sera prêt à la date limite.
+    const siens = base.jobs.filter(j=>j.orderId === o.id);
+    const limiteFin = prodAt(x.limite, '23:59');
+    const pretes = siens.filter(j=>j.libere <= limiteFin).reduce((t,j)=>t + (j.pieces||1), 0);
+    const total = x.resteTotal;
+    if(total > 0 && pretes > 0 && pretes < total) pistes.push({
+      texte: `« ${nom} » : livrer en deux fois`,
+      detail: `${pretes} pièce${pretes>1?'s':''} sur ${total} prête${pretes>1?'s':''} pour le ${fmtDate(x.limite)}, le solde le ${fmtDate(x.fin)}.`,
+      suffit: false});
+
+    // 3. Combien de machines faudrait-il vraiment ? On l'estime à partir du
+    //    planning réel, puis on le vérifie par une simulation.
+    if(restant <= 0){
+      pistes.push({texte: `« ${nom} » : la date limite de fabrication (${fmtDate(x.limite)}) est déjà passée`,
+                   detail: "Seule une nouvelle date de livraison peut régler ce retard.", suffit: false, grave: true});
+    }else{
+      const lignesMachines = new Set();
+      (o.lignes||[]).forEach(l=>{ const r = prodRecette(l.recipeId);
+        if(r) (r.printerIds||[]).forEach(id=>{ const p = prodImprimante(id); if(p && p.actif !== false) lignesMachines.add(id); }); });
+      const M = Math.max(1, lignesMachines.size);
+      let extra = Math.max(1, Math.ceil(M * necessaire / restant) - M);
+      let trouve = null;
+      for(let essai = 0; essai < 3 && extra <= 60; essai++){
+        const cl = prodClones(extra);
+        if(!cl.length) break;
+        const s = jouer(prodMachines().concat(cl), sites);
+        const encore = s.enRetard.some(y=>y.o.id === o.id);
+        if(!encore){ trouve = {n: extra, modele: cl[0].modele}; break; }
+        extra = Math.ceil(extra * 1.25) + 1;
+      }
+      if(trouve) pistes.push({
+        texte: `« ${nom} » : ajouter ${trouve.n} ${trouve.modele}`,
+        detail: `Avec ${M + trouve.n} machines au lieu de ${M}, la commande est prête à temps (vérifié par simulation).`,
+        suffit: true});
+      else pistes.push({
+        texte: `« ${nom} » : il faudrait plus de ${Math.min(extra, 60)} machines supplémentaires`,
+        detail: `La charge est de ${Math.round(x.minutes/60)} h d'impression pour ${Math.max(0, Math.round(restant))} jours disponibles. Mieux vaut livrer en plusieurs fois ou décaler la date.`,
+        suffit: false});
+
+      // 4. Rester plus tard : seulement si l'écart est modeste, sinon inutile.
+      if(necessaire / restant <= 1.4){
+        for(const [minutes, libelle] of [[120, '2 h'], [240, '4 h']]){
+          const s = jouer(prodMachines(), prodElargit(sites, minutes));
+          if(!s.enRetard.some(y=>y.o.id === o.id)){
+            pistes.push({texte: `« ${nom} » : rester ${libelle} de plus chaque jour de présence`,
+                         detail: "Les plateaux sont vidés plus souvent, les machines repartent plus tôt.", suffit: true});
+            break;
+          }
+        }
       }
     }
-  }
-  // Repli : la date réaliste sans rien changer.
-  const c = prodConf();
-  base.enRetard.forEach(x=>{
-    if(x.fin) pistes.push({texte:`${x.o.client||'Commande'} : livrable le ${fmtDate(prodPlusJours(x.fin, c.delaiExpedition))} si rien ne change`, suffit:false});
+
+    // 5. La date réaliste si rien ne change.
+    pistes.push({texte: `« ${nom} » : livrable le ${fmtDate(prodPlusJours(x.fin, c.delaiExpedition))} si rien ne change`,
+                 detail: '', suffit: false});
   });
-  return (plan.remedes = {base, ok:false, pistes});
+
+  return (plan.remedes = {base, ok: false, pistes});
 }
 
 /* Enveloppe : si la recherche dépasse son temps, on garde le planning et on
@@ -4792,9 +4874,10 @@ function viewProdPlanning(){
   const rem = p.machines ? prodRemedes() : null;
   const solution = (rem && !rem.ok && rem.pistes.length) ? `
     <h3 class="prod-h">Pour tenir les délais</h3>
-    ${rem.pistes.map(x=>`<div class="prod-row" style="border-left:3px solid ${x.suffit?'var(--teal)':'var(--ink-soft)'};">
-      <div class="prod-row-nom" style="font-weight:${x.suffit?600:500};">${esc(x.texte)}</div>
-      ${x.suffit?`<div class="prod-row-sub">Suffit à faire rentrer toutes les commandes.</div>`:''}
+    ${rem.pistes.map(x=>`<div class="prod-row" style="border-left:3px solid ${x.grave?'var(--rust)':(x.suffit?'var(--teal)':'var(--ink-soft)')};">
+      <div class="prod-row-nom" style="font-weight:${x.suffit||x.grave?600:500};">${esc(x.texte)}</div>
+      ${x.detail?`<div class="prod-row-sub">${esc(x.detail)}</div>`:''}
+      ${x.action?`<button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="${x.action}">${esc(x.libelle)}</button>`:''}
     </div>`).join('')}` : '';
 
   const bobines = p.alertes.length ? p.alertes.map(f=>{
@@ -4812,12 +4895,15 @@ function viewProdPlanning(){
                        : 'Date de besoin inconnue'}</div>`}
       ${f.attente > 0 ? `<div class="prod-row-sub" style="color:var(--rust);">${f.attente} h de machine perdues à attendre cette bobine</div>` : ''}
     </div>`;
-  }).join('') : `<div class="empty">Aucun article de ces commandes n'a de bobine renseignée.</div>`;
+  }).join('') : `<div class="prod-row" style="border-left:3px solid var(--amber);">
+      <div class="prod-row-nom">Aucun article de ces commandes n'a de bobine renseignée</div>
+      <div class="prod-row-sub">Sans bobine, le planning ne peut ni prévoir la consommation de filament, ni proposer de commandes fournisseur.</div>
+      <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="setSub('production','articles')">Renseigner les articles</button></div>`;
 
   const lots = (p.appro && p.appro.commandes) || [];
   const appro = lots.length ? `
     <h3 class="prod-h">Commandes fournisseur à passer</h3>
-    ${lots.map(cm=>{
+    ${lots.slice(0, 6).map(cm=>{
       const passe = cm.date <= todayISO();
       const sousMini = p.conf.montantMini > 0 && cm.montant < p.conf.montantMini;
       return `<div class="prod-row" style="border-left:3px solid ${passe?'var(--rust)':'var(--teal)'};">
@@ -4830,7 +4916,7 @@ function viewProdPlanning(){
         }).join('')}
         ${sousMini ? `<div class="prod-row-sub" style="color:var(--amber);">Sous le minimum de ${fmtEUR(p.conf.montantMini)} — regroupez avec la commande suivante</div>` : ''}
       </div>`;
-    }).join('')}` : '';
+    }).join('')}${lots.length > 6 ? `<p class="prod-note">… et ${lots.length - 6} autre${lots.length-6>1?'s':''} commande${lots.length-6>1?'s':''} plus lointaine${lots.length-6>1?'s':''}, qui s'afficheront le moment venu.</p>` : ''}` : '';
 
   const cmds = p.sim.commandes.map(x=>{
     const coul = x.sansMachine || x.retard ? 'var(--rust)' : 'var(--green)';
@@ -4854,6 +4940,8 @@ function viewProdPlanning(){
       <div class="stat-card"><div class="num" style="${enRetard?'color:var(--rust);':''}">${enRetard}</div><div class="lbl">hors délai</div></div>
     </div>
     ${avert}${solution}
+    ${(()=>{ try{ const pb = prodAnalyseDonnees(); return pb.length
+        ? `<h3 class="prod-h">Données à vérifier</h3>${prodBlocAnalyse('')}` : ''; }catch(e){ return ''; } })()}
     <h3 class="prod-h">Bobines</h3>
     ${bobines}
     ${appro}
@@ -4866,7 +4954,221 @@ function viewProdPlanning(){
    La file des impressions telle que le planning la prévoit. On coche au fur
    et à mesure ; chaque validation retire le travail de la file et relance le
    calcul sur ce qui reste. Une impression ratée est remise dans la file. */
+/* ---------------- La production jour par jour ----------------
+   Une même lecture sert à l'écran et au PDF : pour chaque jour, combien
+   d'impressions, de pièces et d'heures, puis le détail dans l'ordre où il
+   faut les lancer. */
+function prodPlanParJour(nbJours){
+  const p = prodPlanning();
+  const jobs = (p.sim.jobs||[]).filter(j=>!j.virtuelle).slice()
+    .sort((a,b)=> a.depart - b.depart);
+  const parDate = {};
+  jobs.forEach(j=>{ (parDate[prodIso(j.depart)] = parDate[prodIso(j.depart)] || []).push(j); });
+
+  const debut = todayISO();
+  const dernier = jobs.length ? prodIso(jobs[jobs.length-1].depart) : debut;
+  const fin = nbJours ? prodPlusJours(debut, nbJours - 1) : dernier;
+  const jours = [];
+  for(let d = debut; d <= fin && jours.length < 400; d = prodPlusJours(d, 1)){
+    const liste = parDate[d] || [];
+    jours.push({
+      date: d, liste,
+      pieces:   liste.reduce((t,j)=>t + (j.pieces||1), 0),
+      heures:   liste.reduce((t,j)=>t + (Number(j.duree)||0), 0) / 60,
+      machines: new Set(liste.map(j=>j.printerId)).size,
+      clients:  [...new Set(liste.map(j=>j.client || 'Sans client'))]
+    });
+  }
+  const horsPeriode = jobs.filter(j=>prodIso(j.depart) > fin).length;
+  return {jours, horsPeriode, total: jobs.length, erreur: p.erreur};
+}
+
+function prodNomJour(iso, long){
+  const d = prodAt(iso, '12:00');
+  return d.toLocaleDateString('fr-FR', long
+    ? {weekday:'long', day:'numeric', month:'long'}
+    : {weekday:'short', day:'2-digit', month:'2-digit'});
+}
+function prodHeure(d){
+  return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+function prodMemeJour(a, b){ return prodIso(a) === prodIso(b); }
+/* « 14:30 », ou « mar. 30/09 14:30 » si ce n'est pas le jour du départ. */
+function prodHeureRelative(d, ref){
+  return prodMemeJour(d, ref) ? prodHeure(d)
+    : prodNomJour(prodIso(d), false).replace('.', '') + ' ' + prodHeure(d);
+}
+
+/* Vue à l'écran : une carte par jour, repliable. */
+function viewProdParJour(){
+  const pl = prodPlanParJour(activeSub.parJourTout ? null : 14);
+  const actifs = pl.jours.filter(j=>j.liste.length);
+  if(!actifs.length) return `<div class="empty">Aucune impression prévue sur cette période.</div>`;
+  const cartes = actifs.map((j, i)=>`
+    <details class="jour" ${i < 2 ? 'open' : ''}>
+      <summary>
+        <span class="jour-nom">${esc((s=>s.charAt(0).toUpperCase()+s.slice(1))(prodNomJour(j.date, true)))}</span>
+        <span class="jour-chiffres">${j.liste.length} impression${j.liste.length>1?'s':''} \u00b7 ${j.pieces} pi\u00e8ce${j.pieces>1?'s':''} \u00b7 ${j.heures.toFixed(1)} h</span>
+      </summary>
+      ${j.liste.map(x=>`<div class="jour-ligne" onclick="prodChoixPiece('${x.orderId}','${x.recipeId}','${x.printerId}',${x.pieces})">
+          <span class="jour-h">${prodHeure(x.depart)}</span>
+          <span class="jour-quoi"><b>${esc(x.article)}${x.pieces>1?` \u00d7${x.pieces}`:''}</b>
+            <span>${esc(x.machine)} \u00b7 ${esc(x.client||'sans client')} \u00b7 plateau \u00e0 vider ${esc(prodHeureRelative(x.vidage, x.depart))}</span></span>
+        </div>`).join('')}
+    </details>`).join('');
+  const suite = !activeSub.parJourTout && pl.horsPeriode
+    ? `<button class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="activeSub.parJourTout=true;renderContent()">Voir les ${pl.horsPeriode} impressions suivantes</button>`
+    : '';
+  return cartes + suite;
+}
+
+/* Choix de la période avant l'export. */
+function prodOpenExportPDF(){
+  openModal(`
+    <h3>Planning en PDF</h3>
+    <p class="prod-note" style="margin:0 0 14px 0;">Une synth\u00e8se jour par jour, puis le d\u00e9tail de chaque impression dans l'ordre o\u00f9 il faut les lancer.</p>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button class="btn btn-outline" style="justify-content:center;" onclick="closeModal();prodExportPDF(7)">Les 7 prochains jours</button>
+      <button class="btn btn-outline" style="justify-content:center;" onclick="closeModal();prodExportPDF(14)">Les 14 prochains jours</button>
+      <button class="btn btn-outline" style="justify-content:center;" onclick="closeModal();prodExportPDF(30)">Les 30 prochains jours</button>
+      <button class="btn btn-primary" style="justify-content:center;" onclick="closeModal();prodExportPDF(null)">Tout le planning</button>
+    </div>
+  `);
+}
+
+function prodExportPDF(nbJours){
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast("Librairie PDF non charg\u00e9e, r\u00e9essayez dans un instant"); return; }
+  const pl = prodPlanParJour(nbJours);
+  if(pl.erreur){ toast("Le planning n'est pas calculable pour l'instant"); return; }
+  if(!pl.jours.some(j=>j.liste.length)){ toast("Aucune impression pr\u00e9vue sur cette p\u00e9riode"); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4'});
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+  const M = 12;
+  const NAVY = [20,44,122], CUIVRE = [184,115,51], ENCRE = [30,27,24], DOUX = [110,100,89],
+        TRAIT = [224,216,204], FOND = [247,243,236], VIDE = [175,168,158];
+  const atelier = (account && account.nom) ? account.nom : 'Gestion de stock';
+  const periode = nbJours ? `${nbJours} prochains jours` : 'tout le planning';
+  let y = M;
+
+  const police = (style, taille, coul) => { doc.setFont('helvetica', style); doc.setFontSize(taille); doc.setTextColor(...coul); };
+  const coupe = (txt, largeur) => { let t = String(txt == null ? '' : txt);
+    while(t && doc.getTextWidth(t) > largeur) t = t.slice(0, -2); return t; };
+  const saut = (besoin) => { if(y + besoin > H - M - 6){ doc.addPage(); y = M; return true; } return false; };
+
+  // En-tête
+  doc.setFillColor(...NAVY); doc.rect(0, 0, W, 24, 'F');
+  police('bold', 16, [255,255,255]); doc.text('Planning de production', M, 12);
+  police('normal', 9, [201,210,244]);
+  doc.text(`${atelier}  \u00b7  \u00e9dit\u00e9 le ${new Date().toLocaleDateString('fr-FR')}  \u00b7  ${periode}`, M, 18.5);
+  y = 32;
+
+  // Chiffres clés
+  const imp = pl.jours.reduce((t,j)=>t + j.liste.length, 0);
+  const pcs = pl.jours.reduce((t,j)=>t + j.pieces, 0);
+  const hrs = pl.jours.reduce((t,j)=>t + j.heures, 0);
+  const jOk = pl.jours.filter(j=>j.liste.length).length;
+  const cles = [[String(imp),'impressions'],[String(pcs),'pi\u00e8ces'],[hrs.toFixed(0)+' h',"d'impression"],[String(jOk),'jours de production']];
+  const lc = (W - 2*M - 9) / 4;
+  cles.forEach((k,i)=>{
+    const x = M + i*(lc + 3);
+    doc.setFillColor(...FOND); doc.roundedRect(x, y, lc, 16, 2, 2, 'F');
+    police('bold', 14, NAVY); doc.text(k[0], x + 4, y + 8);
+    police('normal', 8, DOUX); doc.text(k[1], x + 4, y + 13);
+  });
+  y += 24;
+
+  // Synthèse par jour
+  police('bold', 11, NAVY); doc.text('Production par jour', M, y); y += 5;
+  const col = [42, 24, 18, 26, 20, 56];    // jour, impressions, pièces, heures, machines, commandes
+  const ent = ['Jour','Impressions','Pi\u00e8ces','Heures','Machines','Commandes'];
+  const enTete = () => {
+    doc.setFillColor(231,235,250); doc.rect(M, y - 4, W - 2*M, 6.5, 'F');
+    police('bold', 7.5, NAVY);
+    let x = M + 2; ent.forEach((e,i)=>{ doc.text(e.toUpperCase(), x, y); x += col[i]; });
+    y += 5;
+  };
+  enTete();
+  pl.jours.forEach((j, n)=>{
+    if(saut(6)) enTete();
+    const vide = !j.liste.length;
+    if(n % 2){ doc.setFillColor(...FOND); doc.rect(M, y - 3.6, W - 2*M, 5.4, 'F'); }
+    police(vide ? 'normal' : 'bold', 8.2, vide ? VIDE : ENCRE);
+    let x = M + 2;
+    const cel = vide
+      ? [prodNomJour(j.date, false), '\u2013', '', '', '', 'aucune impression']
+      : [prodNomJour(j.date, false), j.liste.length, j.pieces, j.heures.toFixed(1)+' h', j.machines, j.clients.join(', ')];
+    cel.forEach((c,i)=>{ if(i === 1 && !vide) police('normal', 8.2, ENCRE);
+      doc.text(coupe(c, col[i] - 2), x, y); x += col[i]; });
+    y += 5.4;
+  });
+
+  // Détail jour par jour
+  doc.addPage(); y = M;
+  police('bold', 13, NAVY); doc.text('D\u00e9tail des impressions', M, y + 3); y += 10;
+  const dcol = [16, 29, 31, 53, 39, 14];   // départ, plateau, machine, article, client, pièces
+  const dent = ['D\u00e9part','Plateau vid\u00e9','Machine','Article','Client','Pi\u00e8ces'];
+  const enTeteDetail = () => {
+    police('bold', 7, DOUX);
+    let x = M + 2; dent.forEach((e,i)=>{ doc.text(e.toUpperCase(), x, y); x += dcol[i]; });
+    doc.setDrawColor(...TRAIT); doc.line(M, y + 1.5, W - M, y + 1.5);
+    y += 5;
+  };
+  pl.jours.filter(j=>j.liste.length).forEach(j=>{
+    saut(20);
+    doc.setFillColor(...NAVY); doc.rect(M, y - 4, 1.4, 6, 'F');
+    police('bold', 10, ENCRE);
+    const titre = prodNomJour(j.date, true);
+    doc.text(titre.charAt(0).toUpperCase() + titre.slice(1), M + 4, y);
+    police('normal', 8, DOUX);
+    doc.text(`${j.liste.length} impression${j.liste.length>1?'s':''}  \u00b7  ${j.pieces} pi\u00e8ce${j.pieces>1?'s':''}  \u00b7  ${j.heures.toFixed(1)} h`, W - M, y, {align:'right'});
+    y += 6;
+    enTeteDetail();
+    j.liste.forEach((x, n)=>{
+      if(saut(6)){ police('bold', 8, DOUX); doc.text(`${titre} (suite)`, M, y); y += 5; enTeteDetail(); }
+      if(n % 2){ doc.setFillColor(...FOND); doc.rect(M, y - 3.6, W - 2*M, 5.2, 'F'); }
+      police('normal', 8, ENCRE);
+      const cel = [prodHeure(x.depart), prodHeureRelative(x.vidage, x.depart), x.machine,
+                   x.article, x.client || 'sans client', x.pieces || 1];
+      let cx = M + 2;
+      cel.forEach((c,i)=>{ if(i === 0) police('bold', 8, NAVY); else if(i === 1) police('normal', 8, CUIVRE); else police('normal', 8, ENCRE);
+        doc.text(coupe(c, dcol[i] - 2), cx, y); cx += dcol[i]; });
+      y += 5.2;
+    });
+    y += 5;
+  });
+
+  if(pl.horsPeriode){
+    saut(10); police('normal', 8, DOUX);
+    doc.text(`${pl.horsPeriode} impression${pl.horsPeriode>1?'s':''} pr\u00e9vue${pl.horsPeriode>1?'s':''} au-del\u00e0 de cette p\u00e9riode ne figure${pl.horsPeriode>1?'nt':''} pas dans ce document.`, M, y);
+  }
+
+  // Pied de page
+  const n = doc.internal.getNumberOfPages();
+  for(let i = 1; i <= n; i++){
+    doc.setPage(i);
+    police('normal', 7.5, VIDE);
+    doc.text(`${atelier}  \u00b7  Planning de production`, M, H - 6);
+    doc.text(`Page ${i} / ${n}`, W - M, H - 6, {align:'right'});
+  }
+  doc.save(nomFichier('pdf').replace('.pdf', '-planning.pdf'));
+  toast('PDF du planning t\u00e9l\u00e9charg\u00e9');
+}
+
 function viewProdSuivi(){
+  const vue = activeSub.suiviVue || 'jour';
+  const barre = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+      <div class="subtabs" style="margin:0;flex:1;">
+        <button class="subtab-btn ${vue==='jour'?'active':''}" onclick="activeSub.suiviVue='jour';renderContent()">Par jour</button>
+        <button class="subtab-btn ${vue==='tableau'?'active':''}" onclick="activeSub.suiviVue='tableau';renderContent()">Par machine</button>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="prodOpenExportPDF()">PDF</button>
+    </div>`;
+  return barre + (vue === 'tableau' ? viewProdSuiviTableau() : viewProdParJour());
+}
+
+function viewProdSuiviTableau(){
   const p = prodPlanning();
   const machines = prodMachines();
   if(!machines.length)
