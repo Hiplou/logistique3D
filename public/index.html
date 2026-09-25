@@ -84,7 +84,7 @@
 })();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.30)
+  Gestion de stock — stock et production 3D  (v1.31)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -99,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.30]</title>
+<title>Gestion de stock [v1.31]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -537,7 +537,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.30</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.31</p>
   </div>
 </div>
 
@@ -547,7 +547,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.30</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.31</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -724,6 +724,10 @@ function applyData(d){
   state.prod       = (d && d.prod)       || {};
   state.sites      = (d && d.sites)      || [];
   state.runs       = (d && d.runs)       || [];
+  // R\u00e9paration : les quantit\u00e9s mal enregistr\u00e9es sont remises en nombres.
+  (state.movements || []).forEach(m=>{
+    if(typeof m.qty !== 'number' || !isFinite(m.qty)){ m.qty = qteNum(m.qty); window.__reparees = (window.__reparees||0) + 1; }
+  });
   state.artCats    = (d && d.artCats)    || [];
 }
 function currentData(){
@@ -980,9 +984,15 @@ function champVersIso(v){
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 function fmtEUR(n){ return (n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}); }
+/* Une quantit\u00e9 absente ou saisie comme du texte ne doit jamais contaminer le
+   stock : additionner \u00ab 3 \u00bb et 1 donnait \u00ab 31 \u00bb, une quantit\u00e9 manquante donnait
+   NaN, et le calcul de production tournait alors en rond ind\u00e9finiment. */
+function qteNum(v){ const n = Number(v); return isFinite(n) ? n : 0; }
 function currentStock(productId){
-  let s=0;
-  for(const m of state.movements){ if(m.productId===productId){ s += m.type==='in'? m.qty : -m.qty; } }
+  let s = 0;
+  for(const m of state.movements){
+    if(m.productId === productId) s += m.type === 'in' ? qteNum(m.qty) : -qteNum(m.qty);
+  }
   return s;
 }
 function toast(msg){
@@ -1406,7 +1416,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.30';
+const VERSION = 'v1.31';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -4089,6 +4099,14 @@ function prodCommandesEnCours(){
    échelonné qui en découle, puis une seconde passe qui tient compte des
    dates d'arrivée réelles. */
 
+/* Budget de temps. Si une donn\u00e9e aberrante fait d\u00e9raper le calcul, il
+   s'arr\u00eate au lieu de figer l'application : on pr\u00e9f\u00e8re un message \u00e0 un \u00e9cran mort. */
+let __prodLimite = 0;
+function prodVerifieBudget(){
+  if(__prodLimite && Date.now() > __prodLimite)
+    throw new Error("Calcul de production interrompu : trop long. V\u00e9rifiez les quantit\u00e9s, prix et d\u00e9lais saisis.");
+}
+
 function prodTravaux(){
   const c = prodConf();
   const travaux = [];
@@ -4167,6 +4185,7 @@ function prodSimule(machines, sites, options){
 
   let garde = 0;
   while(restants.length && garde++ < 20000){
+    if((garde & 63) === 0) prodVerifieBudget();
     // La machine libre le plus tôt choisit son prochain travail.
     // Quelles machines ont encore quelque chose \u00e0 faire : un seul parcours.
     const occupables = {};
@@ -4282,9 +4301,10 @@ function prodPlanAppro(consoParFil){
     const prod = (state.products||[]).find(p=>p.id === filId);
     const delai = prodDelaiFil(filId);
     const evts = consoParFil[filId].slice().sort((a,b)=>a.date - b.date);
-    let dispo = (prod ? currentStock(prod.id) : 0) - c.margeBobines;
-    let i = 0;
-    while(i < evts.length){
+    let dispo = qteNum(prod ? currentStock(prod.id) : 0) - qteNum(c.margeBobines);
+    let i = 0, tours = 0;
+    while(i < evts.length && tours++ < 5000){       // jamais de boucle sans fin
+      prodVerifieBudget();
       // On consomme jusqu'à tomber sous zéro.
       while(i < evts.length && dispo - evts[i].qte >= -1e-9){ dispo -= evts[i].qte; i++; }
       if(i >= evts.length) break;
@@ -4295,7 +4315,8 @@ function prodPlanAppro(consoParFil){
       const horizon = prodAt(prodPlusJours(dateBesoin, 7 + delai), '23:59');
       let besoin = 0;
       for(let k = i; k < evts.length && evts[k].date <= horizon; k++) besoin += evts[k].qte;
-      const qte = Math.max(1, Math.ceil(besoin - dispo));
+      let qte = Math.ceil(qteNum(besoin) - qteNum(dispo));
+      if(!isFinite(qte) || qte < 1) qte = 1;
       lots.push({filId, dateCommande, delai, arrivee: prodPlusJours(dateCommande, delai),
                  qte, prix: (prod && Number(prod.price)) || 0,
                  nom: prod ? prod.name : 'Bobine supprimée'});
@@ -4452,6 +4473,7 @@ function prodRemedes(){
   const arr = (plan.appro || {}).arrivees || {};
   const jouer = (m, s) => prodSimule(m, s, {arrivees: arr});
   const base = plan.sim;                       // d\u00e9j\u00e0 calcul\u00e9, on ne refait rien
+  __prodLimite = Date.now() + 3000;
   if(!base.enRetard.length) return (plan.remedes = {base, ok:true, pistes:[]});
 
   const pistes = [];
@@ -4499,6 +4521,7 @@ function prodPlanning(){
   const cle = JSON.stringify([state.orders, state.recipes, state.printers, state.sites,
                               state.prod, (state.runs||[]).length, state.movements.length, state.artCats]);
   if(window.__prodCache && window.__prodCache.cle === cle) return window.__prodCache.val;
+  __prodLimite = Date.now() + 3000;
   const machines = prodMachines();
   const sites = state.sites || [];
   // 1. Sans contrainte de matière : on apprend ce qui sera consommé et quand.
