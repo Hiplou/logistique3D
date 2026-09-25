@@ -84,7 +84,7 @@
 })();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.35)
+  Gestion de stock — stock et production 3D  (v1.36)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -99,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.35]</title>
+<title>Gestion de stock [v1.36]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -374,6 +374,8 @@
     box-shadow:0 0 0 3px rgba(0,0,0,0.05);}
   .prod-row-sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px;line-height:1.45;}
   .prod-h{font-size:13px;font-weight:600;color:var(--ink-soft);margin:18px 0 8px 0;}
+  .hist-tag{display:inline-block;font-size:10px;font-weight:600;color:var(--teal);background:var(--teal-pale);
+    border-radius:999px;padding:1px 7px;margin-left:4px;vertical-align:middle;}
   .cat-pastille{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;
     vertical-align:middle;}
   .palette{display:flex;flex-wrap:wrap;gap:7px;}
@@ -549,7 +551,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.35</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.36</p>
   </div>
 </div>
 
@@ -559,7 +561,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.35</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.36</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -711,6 +713,7 @@ let state = {
   sites: [],         // {id,nom,planning{0..6:{actif,de,a}},exceptions[]}
   runs: [],          // {id,orderId,recipeId,printerId,pieces,statut,at,user}
   artCats: [],       // {id,nom,couleur} — catégories des articles de production
+  prodMoves: [],     // {id,recipeId,type,qty,date,user,source,note} — stock de production
   prod: {},          // reglages : delais, manipulation, marge de bobines
 };
 let activeTab = 'accueil';
@@ -741,6 +744,10 @@ function applyData(d){
     if(typeof m.qty !== 'number' || !isFinite(m.qty)){ m.qty = qteNum(m.qty); window.__reparees = (window.__reparees||0) + 1; }
   });
   state.artCats    = (d && d.artCats)    || [];
+  // Stock de production : reconstitu\u00e9 \u00e0 la premi\u00e8re ouverture \u00e0 partir de
+  // l'historique des impressions valid\u00e9es et des livraisons.
+  if(d && Array.isArray(d.prodMoves)) state.prodMoves = d.prodMoves;
+  else { state.prodMoves = prodReconstitueStock(); window.__prodStockNeuf = true; }
 }
 function currentData(){
   return {
@@ -748,7 +755,7 @@ function currentData(){
     categories: state.categories, suppliers: state.suppliers,
     printers: state.printers, recipes: state.recipes,
     orders: state.orders, prod: state.prod, sites: state.sites, runs: state.runs,
-    artCats: state.artCats
+    artCats: state.artCats, prodMoves: state.prodMoves
   };
 }
 
@@ -1428,7 +1435,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.35';
+const VERSION = 'v1.36';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -1865,6 +1872,15 @@ function renderVue(c){
 }
 
 /* ======================= ONGLET 1 : STOCK ======================= */
+/* Deux stocks : les matières premières (bobines, emballages, quincaillerie)
+   et la production (les pièces imprimées). */
+function stockSousOnglets(stockSub, lowCount){
+  return `<div class="subtabs">
+      <button class="subtab-btn ${stockSub==='tous'?'active':''}" onclick="setSub('stock','tous')">Matière première</button>
+      <button class="subtab-btn ${stockSub==='seuil'?'active':''}" onclick="setSub('stock','seuil')">Sous le seuil${lowCount>0?` <span class="tab-badge" style="position:static;margin-left:4px;">${lowCount}</span>`:''}</button>
+      <button class="subtab-btn ${stockSub==='production'?'active':''}" onclick="setSub('stock','production')">Production</button>
+    </div>`;
+}
 function viewStock(){
   const stockSub = activeSub.stock || 'tous';
   const lowCount = state.products.filter(p=>{const s=currentStock(p.id); return s<(p.threshold||0);}).length;
@@ -1872,16 +1888,20 @@ function viewStock(){
   if(stockSub==='seuil'){
     return renderLowStockView(lowCount);
   }
+  if(stockSub==='production'){
+    return `<div class="panel">
+      <div class="panel-title"><h2>Stock de production</h2></div>
+      ${stockSousOnglets(stockSub, lowCount)}
+      ${viewStockProduction()}
+    </div>`;
+  }
 
   const rows = stockRowsHTML();
 
   return `
   <div class="panel">
-    <div class="panel-title"><h2>Vue d'ensemble du stock</h2><button class="btn btn-outline btn-sm" onclick="manualRefresh(this)" title="Recharger le stock depuis le serveur">🔄 Rafraîchir</button></div>
-    <div class="subtabs">
-      <button class="subtab-btn ${stockSub==='tous'?'active':''}" onclick="setSub('stock','tous')">Tous les produits</button>
-      <button class="subtab-btn ${stockSub==='seuil'?'active':''}" onclick="setSub('stock','seuil')" style="position:relative;">Sous le seuil${lowCount>0?` <span class="tab-badge" style="position:static;margin-left:4px;">${lowCount}</span>`:''}</button>
-    </div>
+    <div class="panel-title"><h2>Matières premières</h2><button class="btn btn-outline btn-sm" onclick="manualRefresh(this)" title="Recharger le stock depuis le serveur">🔄 Rafraîchir</button></div>
+    ${stockSousOnglets(stockSub, lowCount)}
     <div class="search-row">
       <input type="text" id="stock-search" placeholder="Rechercher un produit..." value="${esc(window.__stockQuery||'')}" autocomplete="off" oninput="window.__stockQuery=this.value; renderStockList();">
     </div>
@@ -1933,11 +1953,8 @@ function renderLowStockView(lowCount){
   const exportBtn = list.length>0 ? `<button class="btn btn-primary" style="width:100%;justify-content:center;margin:10px 0 4px 0;" onclick="exportLowStockPDF()">📄 Exporter la liste à commander</button>` : '';
   return `
   <div class="panel">
-    <div class="panel-title"><h2>Vue d'ensemble du stock</h2><button class="btn btn-outline btn-sm" onclick="manualRefresh(this)" title="Recharger le stock depuis le serveur">🔄 Rafraîchir</button></div>
-    <div class="subtabs">
-      <button class="subtab-btn" onclick="setSub('stock','tous')">Tous les produits</button>
-      <button class="subtab-btn active">Sous le seuil${lowCount>0?` <span class="tab-badge" style="position:static;margin-left:4px;">${lowCount}</span>`:''}</button>
-    </div>
+    <div class="panel-title"><h2>Matières premières</h2><button class="btn btn-outline btn-sm" onclick="manualRefresh(this)" title="Recharger le stock depuis le serveur">🔄 Rafraîchir</button></div>
+    ${stockSousOnglets('seuil', lowCount)}
     ${exportBtn}
     <p style="color:var(--ink-soft);font-size:13px;margin:6px 0 10px 0;">Produits à recommander — leur stock actuel est sous leur seuil d'alerte.</p>
     <div>${rows}</div>
@@ -3422,20 +3439,48 @@ function drawFinanceCharts(){
 }
 
 /* ======================= ONGLET 6 : HISTORIQUE ======================= */
+/* L'historique r\u00e9unit les deux stocks : les mouvements de mati\u00e8res
+   premi\u00e8res et ceux de la production \u2014 impressions valid\u00e9es, livraisons,
+   ajustements. Un filtre permet de n'en regarder qu'un. */
 function viewHistorique(){
-  const list = state.movements.slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
-  const rows = list.map(m=>{
+  const filtre = activeSub.histo || 'tout';
+  const matieres = filtre === 'production' ? [] : (state.movements||[]).map(m=>({genre:'matiere', m}));
+  const prod = filtre === 'matiere' ? [] : (state.prodMoves||[]).map(m=>({genre:'production', m}));
+  const list = matieres.concat(prod).sort((a,b)=>new Date(b.m.date) - new Date(a.m.date));
+  const etiquette = {production:'Impression valid\u00e9e', livraison:'Livraison', ajustement:'Ajustement'};
+
+  const rows = list.slice(0, 400).map(({genre, m})=>{
+    if(genre === 'production'){
+      const r = prodRecette(m.recipeId);
+      return `
+      <div class="hist-row" onclick="prodOpenStockArticle('${m.recipeId}')" style="cursor:pointer;">
+        <div class="hist-dot ${m.type}"></div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:13.5px;">${esc(r?r.nom:'Article supprim\u00e9')}
+            <span style="font-weight:400;color:var(--ink-soft);">\u00b7 ${m.type==='in'?'+':'-'}${m.qty}</span>
+            <span class="hist-tag">production</span></div>
+          <div style="font-size:11.5px;color:var(--ink-soft);">${fmtDateHeure(m.date)} \u00b7 ${esc(m.user||'?')} \u00b7 ${esc(etiquette[m.source]||m.source||'')}${m.note && m.note !== etiquette[m.source] ? ' \u00b7 '+esc(m.note) : ''}</div>
+        </div>
+      </div>`;
+    }
     const p = state.products.find(x=>x.id===m.productId);
     return `
     <div class="hist-row" onclick="openHistEdit('${m.id}')" style="cursor:pointer;">
       <div class="hist-dot ${m.type}"></div>
       <div style="flex:1;min-width:0;">
-        <div style="font-weight:600;font-size:13.5px;">${esc(p?p.name:'Produit supprimé')} <span style="font-weight:400;color:var(--ink-soft);">· ${m.type==='in'?'+':'-'}${m.qty}</span></div>
-        <div style="font-size:11.5px;color:var(--ink-soft);">${fmtDateHeure(m.date)} · ${esc(m.user||'?')} · ${esc(m.source||'manuel')}${m.note?' · '+esc(m.note):''}</div>
+        <div style="font-weight:600;font-size:13.5px;">${esc(p?p.name:'Produit supprim\u00e9')} <span style="font-weight:400;color:var(--ink-soft);">\u00b7 ${m.type==='in'?'+':'-'}${m.qty}</span></div>
+        <div style="font-size:11.5px;color:var(--ink-soft);">${fmtDateHeure(m.date)} \u00b7 ${esc(m.user||'?')} \u00b7 ${esc(m.source||'manuel')}${m.note?' \u00b7 '+esc(m.note):''}</div>
       </div>
     </div>`;
-  }).join('') || `<div class="empty">Aucun mouvement enregistré.</div>`;
-  return `<div class="panel"><div class="panel-title"><h2>Historique des mouvements</h2></div>${rows}</div>`;
+  }).join('') || `<div class="empty">Aucun mouvement enregistr\u00e9.</div>`;
+
+  return `<div class="panel"><div class="panel-title"><h2>Historique des mouvements</h2></div>
+    <div class="subtabs">
+      <button class="subtab-btn ${filtre==='tout'?'active':''}" onclick="setSub('histo','tout')">Tout</button>
+      <button class="subtab-btn ${filtre==='matiere'?'active':''}" onclick="setSub('histo','matiere')">Mati\u00e8res premi\u00e8res</button>
+      <button class="subtab-btn ${filtre==='production'?'active':''}" onclick="setSub('histo','production')">Production</button>
+    </div>
+    ${rows}${list.length > 400 ? `<p class="prod-note">Les 400 mouvements les plus r\u00e9cents sont affich\u00e9s.</p>` : ''}</div>`;
 }
 function openHistEdit(id){
   const m = state.movements.find(x=>x.id===id); if(!m) return;
@@ -4047,35 +4092,22 @@ async function prodLivre(orderId){
   if(!o || o.livree) return;
   let sorties = 0;
   (o.lignes||[]).forEach(l=>{
-    const r = prodRecette(l.recipeId);
-    if(!r || !r.produitFiniId) return;
-    if(!state.products.some(pp=>pp.id === r.produitFiniId)) return;
-    const q = Number(l.qte) || 0;
-    if(q <= 0) return;
-    state.movements.push({id:uid(), productId:r.produitFiniId, type:'out', qty:q,
-      date:new Date().toISOString(), user:state.user || null, source:'livraison',
-      note:'Livraison ' + (o.client || 'commande')});
+    const q = qteNum(l.qte);
+    if(q <= 0 || !prodRecette(l.recipeId)) return;
+    prodAjoutMouvement(l.recipeId, 'out', q, 'livraison', 'Livraison ' + (o.client || 'commande'), {orderId: o.id});
     sorties += q;
   });
   o.livree = true; o.livreeLe = new Date().toISOString();
   if(!o.fait) o.fait = true;
   scheduleCloudSave(); setCloseHook(null); closeModal();
-  toast(sorties ? `Livr\u00e9e \u00b7 ${sorties} pi\u00e8ce${sorties>1?'s':''} sortie${sorties>1?'s':''} du stock` : 'Commande livr\u00e9e');
+  toast(sorties ? `Livr\u00e9e \u00b7 ${sorties} pi\u00e8ce${sorties>1?'s':''} sortie${sorties>1?'s':''} du stock de production` : 'Commande livr\u00e9e');
   renderContent();
 }
 function prodAnnuleLivraison(orderId){
   const o = (state.orders||[]).find(x=>x.id===orderId);
   if(!o || !o.livree) return;
   askConfirm('Annuler la livraison ? Les pi\u00e8ces reviennent en stock.', async ()=>{
-    (o.lignes||[]).forEach(l=>{
-      const r = prodRecette(l.recipeId);
-      if(!r || !r.produitFiniId) return;
-      const q = Number(l.qte) || 0;
-      if(q <= 0) return;
-      state.movements.push({id:uid(), productId:r.produitFiniId, type:'in', qty:q,
-        date:new Date().toISOString(), user:state.user || null, source:'livraison',
-        note:'Livraison annul\u00e9e'});
-    });
+    state.prodMoves = prodMouvements().filter(m=>!(m.orderId === o.id && m.source === 'livraison'));
     o.livree = false; o.livreeLe = null;
     scheduleCloudSave(); closeModal(); toast('Livraison annul\u00e9e'); renderContent();
   });
@@ -4815,6 +4847,140 @@ function prodBlocAnalyse(intro){
   return `${intro ? `<p class="prod-note" style="margin:0 0 10px 0;">${intro}</p>` : ''}${liste}`;
 }
 
+/* ---------------- Stock de production ----------------
+   Les pièces imprimées ont leur propre stock, distinct de celui des matières
+   premières. Il est tenu automatiquement, un par article de production :
+   une impression validée y entre, une commande livrée en sort. */
+/* Le prix unitaire le plus récent pratiqué pour un article, pour pré-remplir. */
+function prodDernierPrix(recipeId){
+  const o = (state.orders||[]).slice().reverse()
+    .find(x=>(x.lignes||[]).some(l=>l.recipeId === recipeId && qteNum(l.prix) > 0));
+  if(!o) return '';
+  const l = o.lignes.find(l=>l.recipeId === recipeId && qteNum(l.prix) > 0);
+  return l ? l.prix : '';
+}
+function prodMouvements(){ return state.prodMoves || (state.prodMoves = []); }
+
+function prodStockArticle(recipeId){
+  let s = 0;
+  for(const m of prodMouvements())
+    if(m.recipeId === recipeId) s += m.type === 'in' ? qteNum(m.qty) : -qteNum(m.qty);
+  return s;
+}
+
+function prodAjoutMouvement(recipeId, type, qty, source, note, extra){
+  const q = qteNum(qty);
+  if(!recipeId || q <= 0) return null;
+  const m = Object.assign({id: uid(), recipeId, type, qty: q,
+    date: new Date().toISOString(), user: state.user || null,
+    source: source || 'manuel', note: note || ''}, extra || {});
+  prodMouvements().push(m);
+  return m;
+}
+
+/* Première ouverture : le stock de production est reconstitué à partir de ce
+   qui a déjà eu lieu. Les impressions validées avant cette version n'étaient
+   rangées nulle part ; elles apparaissent ainsi dans le stock. */
+function prodReconstitueStock(){
+  const L = [];
+  (state.runs||[]).forEach(r=>{
+    if(r.statut !== 'fait' || !qteNum(r.pieces)) return;
+    L.push({id: uid(), recipeId: r.recipeId, type: 'in', qty: qteNum(r.pieces),
+            date: r.at || new Date().toISOString(), user: r.user || null,
+            source: 'production', note: 'Impression valid\u00e9e', orderId: r.orderId, runId: r.id});
+  });
+  (state.orders||[]).forEach(o=>{
+    if(!o.livree) return;
+    (o.lignes||[]).forEach(l=>{
+      if(!qteNum(l.qte)) return;
+      L.push({id: uid(), recipeId: l.recipeId, type: 'out', qty: qteNum(l.qte),
+              date: o.livreeLe || o.dateLivraison || new Date().toISOString(), user: null,
+              source: 'livraison', note: 'Livraison ' + (o.client || 'commande'), orderId: o.id});
+    });
+  });
+  return L;
+}
+
+/* Vue « Production » du stock. */
+function viewStockProduction(){
+  const recettes = (state.recipes||[]).slice().sort((a,b)=>String(a.nom).localeCompare(String(b.nom)));
+  if(!recettes.length)
+    return `<div class="empty">Aucun article de production. Cr\u00e9ez-en dans Production \u2192 Articles : chacun aura automatiquement sa ligne ici.</div>`;
+
+  const aLivrer = {};
+  prodCommandesEnCours().concat((state.orders||[]).filter(o=>o.fait && !o.livree)).forEach(o=>{
+    (o.lignes||[]).forEach(l=>{ aLivrer[l.recipeId] = (aLivrer[l.recipeId]||0) + qteNum(l.qte); });
+  });
+
+  const total = recettes.reduce((t,r)=>t + Math.max(0, prodStockArticle(r.id)), 0);
+  const lignes = recettes.map(r=>{
+    const s = prodStockArticle(r.id);
+    const cat = prodCat(r.catId);
+    const dernier = prodMouvements().filter(m=>m.recipeId === r.id && m.type === 'in')
+      .sort((a,b)=>new Date(b.date) - new Date(a.date))[0];
+    return `<div class="prod-row" style="display:flex;align-items:center;gap:12px;${cat?`border-left:4px solid ${cat.couleur};`:''}"
+                 onclick="prodOpenStockArticle('${r.id}')">
+      <div style="flex:1;min-width:0;">
+        <div class="prod-row-nom">${esc(r.nom)}</div>
+        <div class="prod-row-sub">${aLivrer[r.id] ? `${aLivrer[r.id]} en commande` : 'Aucune commande en cours'}${
+          dernier ? ` \u00b7 derni\u00e8re entr\u00e9e ${fmtDate(dernier.date)}` : ''}</div>
+      </div>
+      <div style="text-align:right;flex:none;">
+        <div style="font-family:'Fraunces',serif;font-size:24px;font-weight:600;line-height:1;color:${s < 0 ? 'var(--rust)' : 'var(--ink)'};">${s}</div>
+        <div class="prod-row-sub" style="margin:0;">pi\u00e8ce${Math.abs(s)>1?'s':''}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<p class="prod-note" style="margin:0 0 12px 0;">${total} pi\u00e8ce${total>1?'s':''} imprim\u00e9e${total>1?'s':''} en stock.
+      Une impression valid\u00e9e entre ici, une commande livr\u00e9e en sort.</p>${lignes}`;
+}
+
+/* Fiche d'un article en stock de production : ses mouvements et un ajustement
+   manuel, pour la casse, une vente directe ou un inventaire. */
+function prodOpenStockArticle(id){
+  const r = prodRecette(id); if(!r) return;
+  const mv = prodMouvements().filter(m=>m.recipeId === id)
+    .sort((a,b)=>new Date(b.date) - new Date(a.date)).slice(0, 12);
+  window.__prodStockArt = id;
+  openModal(`
+    <h3>${esc(r.nom)}</h3>
+    <div style="font-family:'Fraunces',serif;font-size:34px;font-weight:600;line-height:1;margin:0 0 4px 0;">${prodStockArticle(id)}</div>
+    <p class="prod-note" style="margin:0 0 16px 0;">pi\u00e8ces en stock de production</p>
+    <div class="field"><label>Ajuster le stock \u2014 casse, vente directe, inventaire</label>
+      <div style="display:flex;gap:8px;">
+        <select id="psa-sens" style="flex:none;width:auto;">
+          <option value="out">Retirer</option><option value="in">Ajouter</option>
+        </select>
+        <input type="text" id="psa-qte" inputmode="numeric" pattern="[0-9]*" style="flex:1;min-width:0;">
+      </div></div>
+    <div class="field"><label>Motif</label><input type="text" id="psa-note" autocomplete="off"></div>
+    <h3 class="prod-h" style="margin-top:4px;">Derniers mouvements</h3>
+    ${mv.length ? mv.map(m=>`<div class="prod-row" style="padding:8px 12px;border-left:3px solid ${m.type==='in'?'var(--green)':'var(--rust)'};">
+        <div class="prod-row-sub" style="margin:0;"><b style="color:var(--ink);">${m.type==='in'?'+':'\u2212'}${m.qty}</b>
+          \u00b7 ${esc(m.note || m.source)} \u00b7 ${fmtDateHeure(m.date)}</div></div>`).join('')
+      : `<p class="prod-note" style="margin:0;">Aucun mouvement pour l'instant.</p>`}
+    <div class="modal-actions"><button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodSaveAjustement()">Enregistrer l'ajustement</button></div>
+  `);
+  setCloseHook(()=>{ if(modalTouche()) prodAppliqueAjustement(true); });
+}
+function prodAppliqueAjustement(silencieux){
+  const id = window.__prodStockArt;
+  const e = document.getElementById('psa-qte'); if(!e) return false;
+  const q = parseInt(e.value, 10) || 0;
+  if(q <= 0){ if(!silencieux) toast('Indiquez une quantit\u00e9'); return false; }
+  const sens = (document.getElementById('psa-sens')||{}).value || 'out';
+  const note = ((document.getElementById('psa-note')||{}).value || '').trim() || 'Ajustement manuel';
+  prodAjoutMouvement(id, sens, q, 'ajustement', note);
+  scheduleCloudSave();
+  toast(`${sens==='in'?'+':'\u2212'}${q} en stock de production`);
+  return true;
+}
+async function prodSaveAjustement(){
+  if(!prodAppliqueAjustement(false)) return;
+  setCloseHook(null); closeModal(); renderContent();
+}
+
 function viewProduction(){
   const sub = activeSub.production || 'planning';
   return `
@@ -5271,13 +5437,10 @@ async function prodValide(orderId, recipeId, printerId, pieces, ok){
     pieces: ok ? n : 0, statut: ok ? 'fait' : 'rate',
     at: new Date().toISOString(), user: state.user || null});
 
-  // Une piece validee entre directement dans le stock.
-  const rec = prodRecette(recipeId);
-  if(ok && rec && rec.produitFiniId && state.products.some(pp=>pp.id === rec.produitFiniId)){
-    state.movements.push({id:uid(), productId:rec.produitFiniId, type:'in', qty:n,
-      date:new Date().toISOString(), user:state.user || null,
-      source:'production', note:'Impression validee'});
-  }
+  // Une pi\u00e8ce valid\u00e9e entre dans le stock de production.
+  const run = state.runs[state.runs.length - 1];
+  if(ok) prodAjoutMouvement(recipeId, 'in', n, 'production', 'Impression valid\u00e9e',
+                            {orderId, runId: run.id});
   const o = (state.orders||[]).find(x=>x.id===orderId);
   if(ok && o && !o.fait && (o.lignes||[]).every(l=>prodReste(o,l) <= 0)){
     o.fait = true; toast('Commande terminée');
@@ -5293,6 +5456,7 @@ function prodAnnuleDerniere(){
   if(!L.length){ toast('Rien à annuler'); return; }
   askConfirm('Annuler la dernière validation ?', async ()=>{
     const r = L.pop();
+    if(r) state.prodMoves = prodMouvements().filter(m=>m.runId !== r.id);
     const o = r ? (state.orders||[]).find(x=>x.id===r.orderId) : null;
     if(o && o.fait) o.fait = false;
     scheduleCloudSave(); closeModal(); toast('Validation annulée'); renderContent();
@@ -5575,7 +5739,6 @@ function viewProdListeArticles(){
   });
   const rows = l.length ? l.map(r=>{
     const f = state.products.find(p=>p.id===r.filamentId);
-    const fini = state.products.find(x=>x.id===r.produitFiniId);
     const m = (r.printerIds||[]).length;
     const pp = Math.max(1, Number(r.piecesParImpression)||1);
     const cat = prodCat(r.catId);
@@ -5584,7 +5747,7 @@ function viewProdListeArticles(){
       ${cat?`<div class="prod-row-sub" style="color:${cat.couleur};font-weight:600;">${esc(cat.nom)}</div>`:''}
       <div class="prod-row-sub">${f?esc(f.name):'Bobine non renseign\u00e9e'} \u00b7 ${r.piecesParBobine||'?'} pi\u00e8ces par bobine</div>
       <div class="prod-row-sub">${prodDuree(r.minutesPiece)} par impression${pp>1?`, ${pp} pi\u00e8ces \u00e0 la fois`:''} \u00b7 ${m?`${m} imprimante${m>1?'s':''}`:'aucune imprimante'}</div>
-      <div class="prod-row-sub">${fini ? `Valid\u00e9e, la pi\u00e8ce entre en stock sous \u00ab ${esc(fini.name)} \u00bb` : 'Aucun produit fini reli\u00e9'}</div>
+      <div class="prod-row-sub">Stock de production : ${prodStockArticle(r.id)} pi\u00e8ce${Math.abs(prodStockArticle(r.id))>1?'s':''}</div>
     </div>`;
   }).join('') : `<div class="empty">Aucun article. Un article, c'est la recette d'impression d'une pi\u00e8ce : sa bobine, son rendement, sa dur\u00e9e.</div>`;
 
@@ -5691,13 +5854,6 @@ function prodOpenArticle(id){
            <button class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="prodVersNouvelleBobine()">Cr\u00e9er une bobine</button>`}
       ${bobines.length?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="prodVersNouvelleBobine()">+ Ajouter une autre bobine</button>`:''}
     </div>
-
-    <div class="field"><label>Produit fini cr\u00e9\u00e9 en stock \u2014 une pi\u00e8ce valid\u00e9e y entre toute seule</label>
-      <select id="pa-fini">
-        <option value="">\u2014 aucun, pas d'entr\u00e9e en stock \u2014</option>
-        <option value="__creer">Cr\u00e9er un produit \u00e0 ce nom</option>
-        ${autres.map(pp=>`<option value="${pp.id}" ${r&&r.produitFiniId===pp.id?'selected':''}>${esc(pp.name)}</option>`).join('')}
-      </select></div>
 
     <div class="field"><label>Pi\u00e8ces obtenues avec une bobine</label>
       <input type="text" id="pa-rend" inputmode="numeric" pattern="[0-9]*" value="${r?esc(r.piecesParBobine):''}"></div>
@@ -5846,24 +6002,9 @@ function prodAppliqueArticle(silencieux){
     const c = document.getElementById(cle);
     if(c && c.checked) ids.push(m.id);
   });
-  // Produit fini : celui qui recevra les pieces validees.
-  let fini = (document.getElementById('pa-fini')||{}).value || '';
-  if(fini === '__creer'){
-    const dejaLa = state.products.find(pp=>pp.name === nom);
-    if(dejaLa) fini = dejaLa.id;
-    else{
-      const cat = (state.categories||[]).find(c=>c.name !== 'Filament 3D');
-      const neuf = {id:uid(), name:nom, category:(cat?cat.name:'Autre'), supplier:'',
-                    supplierRef:'', price:0, threshold:0, unit:'piece', photo:null};
-      state.products.push(neuf);
-      fini = neuf.id;
-      if(!silencieux) toast('Produit fini cree dans le stock');
-    }
-  }
   const donnees = {
     nom,
     catId: (document.getElementById('pa-cat')||{}).value || null,
-    produitFiniId: fini || null,
     filamentId: (document.getElementById('pa-fil')||{}).value || null,
     piecesParBobine: Math.max(1, parseInt((document.getElementById('pa-rend')||{}).value, 10) || 1),
     piecesParImpression: Math.max(1, parseInt((document.getElementById('pa-lot')||{}).value, 10) || 1),
@@ -5948,7 +6089,7 @@ function prodOpenCommande(id){
     ${o?`<div style="margin-top:4px;">${o.livree
       ? `<button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="prodAnnuleLivraison('${o.id}')">Annuler la livraison</button>`
       : `<button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="prodLivre('${o.id}')">Marquer comme livr\u00e9e</button>
-         <p class="prod-note">Les pi\u00e8ces de cette commande sortiront du stock.</p>`}</div>`:''}
+         <p class="prod-note">Les pi\u00e8ces de cette commande sortiront du stock de production.</p>`}</div>`:''}
     <div class="modal-actions">
       <button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="prodSaveCommande()">Enregistrer</button>
       ${o?`<button class="btn btn-ghost" onclick="prodSupprCommande('${o.id}')">Supprimer</button>`:''}
@@ -6010,8 +6151,7 @@ function prodAjoutLigne(){
   if(!rec.length){ toast("Créez d'abord un article"); return; }
   window.__prodLignes = window.__prodLignes || [];
   const r0 = rec[0];
-  const fini = r0 ? state.products.find(pp=>pp.id === r0.produitFiniId) : null;
-  window.__prodLignes.push({recipeId: r0.id, qte: 1, prix: (fini && fini.price) || ''});
+  window.__prodLignes.push({recipeId: r0.id, qte: 1, prix: prodDernierPrix(r0.id)});
   prodRenderLignes();
 }
 function prodMajLigne(i, champ, val){
@@ -6020,9 +6160,7 @@ function prodMajLigne(i, champ, val){
   else if(champ === 'prix') L[i].prix = String(val||'').replace(',', '.').replace(/[^0-9.]/g,'');
   else{
     L[i][champ] = val;
-    const r = prodRecette(val);
-    const fini = r ? state.products.find(pp=>pp.id === r.produitFiniId) : null;
-    if(!L[i].prix && fini && fini.price) L[i].prix = fini.price;
+    if(!L[i].prix) L[i].prix = prodDernierPrix(val);
   }
   prodRenderLignes();
 }
