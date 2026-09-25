@@ -84,7 +84,7 @@
 })();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.36)
+  Gestion de stock — stock et production 3D  (v1.37)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -99,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.36]</title>
+<title>Gestion de stock [v1.37]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -551,7 +551,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.36</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.37</p>
   </div>
 </div>
 
@@ -561,7 +561,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.36</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.37</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1435,7 +1435,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.36';
+const VERSION = 'v1.37';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -3968,14 +3968,39 @@ function prodConf(){
     montantMini:      prodNum(d.montantMini, 0)
   };
 }
-/* Ce qui a été réellement imprimé. Une impression validée disparaît du
-   planning ; une impression ratée y reste, elle sera replanifiée. */
-function prodFaits(orderId, recipeId){
-  return (state.runs||[]).filter(r=>r.orderId===orderId && r.recipeId===recipeId && r.statut==='fait')
-    .reduce((t,r)=>t + (Number(r.pieces)||0), 0);
+/* Ce qu'il reste \u00e0 imprimer se d\u00e9duit du stock de production : les pi\u00e8ces en
+   stock sont attribu\u00e9es aux commandes non livr\u00e9es, la plus urgente d'abord.
+   Une validation, une casse ou un ajout manuel modifient donc aussit\u00f4t le
+   planning, puisqu'ils modifient le stock. */
+let __allocation = null, __allocCle = '';
+function prodAllocation(){
+  const mv = state.prodMoves || [];
+  const cle = mv.length + '|' + (mv.length ? mv[mv.length-1].id : '') + '|' +
+    JSON.stringify((state.orders||[]).map(o=>[o.id, o.livree?1:0, o.dateLivraison,
+      (o.lignes||[]).map(l=>[l.recipeId, l.qte])]));
+  if(__allocation && __allocCle === cle) return __allocation;
+  const dispo = {};
+  (state.recipes||[]).forEach(r=>{ dispo[r.id] = Math.max(0, prodStockArticle(r.id)); });
+  const reste = {};
+  (state.orders||[]).filter(o=>!o.livree)
+    .sort((a,b)=> String(a.dateLivraison||'9999').localeCompare(String(b.dateLivraison||'9999')))
+    .forEach(o=>(o.lignes||[]).forEach((l, i)=>{
+      const q = qteNum(l.qte);
+      const pris = Math.min(q, dispo[l.recipeId] || 0);
+      dispo[l.recipeId] = (dispo[l.recipeId] || 0) - pris;
+      reste[o.id + '|' + i] = q - pris;
+    }));
+  __allocCle = cle; __allocation = reste;
+  return reste;
 }
 function prodReste(o, l){
-  return Math.max(0, (Number(l.qte)||0) - prodFaits(o.id, l.recipeId));
+  if(o.livree) return 0;
+  const v = prodAllocation()[o.id + '|' + (o.lignes||[]).indexOf(l)];
+  return v === undefined ? qteNum(l.qte) : Math.max(0, v);
+}
+/* Une commande est produite quand le stock couvre toutes ses lignes. */
+function prodCouverte(o){
+  return !o.livree && (o.lignes||[]).length > 0 && (o.lignes||[]).every(l=>prodReste(o, l) <= 0);
 }
 function prodManip(r){
   const v = Number(r && r.manipMinutes);
@@ -4078,7 +4103,7 @@ function prodPresenceCalcul(site, ts){
 /* Trois \u00e9tats : en production, produite mais pas partie, livr\u00e9e. */
 function prodEtatCommande(o){
   if(o.livree) return {cle:'livree',    coul:'var(--green)', txt:'Livr\u00e9e'};
-  if(o.fait)   return {cle:'produite',  coul:'var(--amber)', txt:'Produite, pas encore livr\u00e9e'};
+  if(prodCouverte(o)) return {cle:'produite', coul:'var(--amber)', txt:'Produite, pas encore livr\u00e9e'};
   return              {cle:'production', coul:'var(--rust)',  txt:'En production'};
 }
 function prodPastille(o){
@@ -4098,7 +4123,6 @@ async function prodLivre(orderId){
     sorties += q;
   });
   o.livree = true; o.livreeLe = new Date().toISOString();
-  if(!o.fait) o.fait = true;
   scheduleCloudSave(); setCloseHook(null); closeModal();
   toast(sorties ? `Livr\u00e9e \u00b7 ${sorties} pi\u00e8ce${sorties>1?'s':''} sortie${sorties>1?'s':''} du stock de production` : 'Commande livr\u00e9e');
   renderContent();
@@ -4125,7 +4149,7 @@ function prodTotal(o){
 }
 
 function prodCommandesEnCours(){
-  return (state.orders||[]).filter(o=>!o.fait)
+  return (state.orders||[]).filter(o=>!o.livree && !prodCouverte(o))
     .sort((a,b)=> String(a.dateLivraison||'').localeCompare(String(b.dateLivraison||'')));
 }
 
@@ -4647,7 +4671,9 @@ function prodRemedes(){
 function prodPlanning(){
   prodMigration();
   const cle = JSON.stringify([state.orders, state.recipes, state.printers, state.sites,
-                              state.prod, (state.runs||[]).length, state.movements.length, state.artCats]);
+                              state.prod, (state.runs||[]).length, state.movements.length, state.artCats,
+                              (state.prodMoves||[]).length,
+                              (state.prodMoves||[]).length ? state.prodMoves[state.prodMoves.length-1].id : '']);
   if(window.__prodCache && window.__prodCache.cle === cle) return window.__prodCache.val;
   __prodLimite = Date.now() + 3000;
   const machines = prodMachines();
@@ -4908,7 +4934,7 @@ function viewStockProduction(){
     return `<div class="empty">Aucun article de production. Cr\u00e9ez-en dans Production \u2192 Articles : chacun aura automatiquement sa ligne ici.</div>`;
 
   const aLivrer = {};
-  prodCommandesEnCours().concat((state.orders||[]).filter(o=>o.fait && !o.livree)).forEach(o=>{
+  (state.orders||[]).filter(o=>!o.livree).forEach(o=>{
     (o.lignes||[]).forEach(l=>{ aLivrer[l.recipeId] = (aLivrer[l.recipeId]||0) + qteNum(l.qte); });
   });
 
@@ -5442,8 +5468,8 @@ async function prodValide(orderId, recipeId, printerId, pieces, ok){
   if(ok) prodAjoutMouvement(recipeId, 'in', n, 'production', 'Impression valid\u00e9e',
                             {orderId, runId: run.id});
   const o = (state.orders||[]).find(x=>x.id===orderId);
-  if(ok && o && !o.fait && (o.lignes||[]).every(l=>prodReste(o,l) <= 0)){
-    o.fait = true; toast('Commande terminée');
+  if(ok && o && prodCouverte(o)){
+    toast('Commande enti\u00e8rement produite');
   }else{
     toast(ok ? 'Impression validée' : 'Impression remise dans la file');
   }
@@ -5458,7 +5484,6 @@ function prodAnnuleDerniere(){
     const r = L.pop();
     if(r) state.prodMoves = prodMouvements().filter(m=>m.runId !== r.id);
     const o = r ? (state.orders||[]).find(x=>x.id===r.orderId) : null;
-    if(o && o.fait) o.fait = false;
     scheduleCloudSave(); closeModal(); toast('Validation annulée'); renderContent();
   });
 }
@@ -6084,8 +6109,7 @@ function prodOpenCommande(id){
       <div id="pc-total" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);"></div></div>
     <div class="field"><label>Note</label>
       <input type="text" id="pc-note" value="${o?esc(o.note||''):''}" placeholder="Coloris, finition, contact…"></div>
-    ${o?`<div class="checkline"><input type="checkbox" id="pc-fait" ${o.fait?'checked':''}>
-      <label for="pc-fait" style="margin:0;text-transform:none;font-weight:500;color:var(--ink-soft);">Commande fabriquée</label></div>`:''}
+    ${o && !o.livree ? `<p class="prod-note">\u00c9tat de fabrication : ${esc(prodEtatCommande(o).txt.toLowerCase())}. Il d\u00e9coule du stock de production.</p>` : ''}
     ${o?`<div style="margin-top:4px;">${o.livree
       ? `<button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="prodAnnuleLivraison('${o.id}')">Annuler la livraison</button>`
       : `<button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="prodLivre('${o.id}')">Marquer comme livr\u00e9e</button>
@@ -6175,7 +6199,6 @@ function prodAppliqueCommande(silencieux){
     if(!silencieux) toast(!date ? 'Indiquez la date de livraison' : 'Ajoutez au moins une pi\u00e8ce');
     return false;
   }
-  const f = document.getElementById('pc-fait');
   const baseEl = document.getElementById('pc-base');
   const tvaEl  = document.getElementById('pc-tva');
   const d = {
@@ -6184,8 +6207,7 @@ function prodAppliqueCommande(silencieux){
     prixTTC: baseEl ? baseEl.value === 'ttc' : false,
     tva: tvaEl && isFinite(parseFloat(String(tvaEl.value).replace(',','.')))
          ? parseFloat(String(tvaEl.value).replace(',','.')) : 20,
-    note: (document.getElementById('pc-note')||{}).value.trim(),
-    fait: f ? f.checked : false
+    note: (document.getElementById('pc-note')||{}).value.trim()
   };
   state.orders = state.orders || [];
   const ex = window.__prodCmd ? state.orders.find(o=>o.id===window.__prodCmd) : null;
