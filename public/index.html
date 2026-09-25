@@ -84,7 +84,7 @@
 })();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.32)
+  Gestion de stock — stock et production 3D  (v1.33)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -99,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.32]</title>
+<title>Gestion de stock [v1.33]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -537,7 +537,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.32</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.33</p>
   </div>
 </div>
 
@@ -547,7 +547,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.32</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.33</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1416,7 +1416,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.32';
+const VERSION = 'v1.33';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -4466,7 +4466,7 @@ function prodClones(n){
               siteId:ref.siteId, actif:true, clonDe:ref.id});
   return out;
 }
-function prodRemedes(){
+function prodRemedesCalcul(){
   const sites = state.sites || [];
   const plan = prodPlanning();
   if(plan.remedes) return plan.remedes;        // d\u00e9j\u00e0 cherch\u00e9s pour cet \u00e9tat
@@ -4513,6 +4513,20 @@ function prodRemedes(){
     if(x.fin) pistes.push({texte:`${x.o.client||'Commande'} : livrable le ${fmtDate(prodPlusJours(x.fin, c.delaiExpedition))} si rien ne change`, suffit:false});
   });
   return (plan.remedes = {base, ok:false, pistes});
+}
+
+/* Enveloppe : si la recherche dépasse son temps, on garde le planning et on
+   renonce simplement aux suggestions, au lieu de faire planter l'écran. */
+function prodRemedes(){
+  try{ return prodRemedesCalcul(); }
+  catch(e){
+    console.error('Recherche de remèdes interrompue', e);
+    const plan = prodPlanning();
+    return (plan.remedes = {base: plan.sim, ok: false, interrompu: true,
+      pistes: [{texte: "Recherche de solutions interrompue : trop de calculs pour ce téléphone.", suffit: false}]});
+  }finally{
+    __prodLimite = 0;
+  }
 }
 
 /* Résultat mis en cache : la simulation tourne à chaque rendu d'onglet. */
@@ -4596,6 +4610,129 @@ function prodTuileAlerte(){
 }
 
 /* ======================= AFFICHAGE ======================= */
+/* ---------------- Vérification des données ----------------
+   Quand le planning ne peut pas se calculer, dire « vérifiez vos données » ne
+   sert à rien. On parcourt donc les données à la recherche de ce qui peut
+   faire dérailler le calcul, et on désigne chaque fois l'élément précis, avec
+   un bouton qui ouvre directement sa fiche pour le corriger. */
+function prodHeuresSemaine(s){
+  const pl = prodNormalisePlanning(s && s.planning);
+  let m = 0;
+  for(let j = 0; j <= 6; j++) (pl[j]||[]).forEach(x=>{
+    const [a,b] = String(x.de||'0:0').split(':').map(Number);
+    const [c,d] = String(x.a ||'0:0').split(':').map(Number);
+    m += Math.max(0, (c*60+(d||0)) - (a*60+(b||0)));
+  });
+  return m / 60;
+}
+
+function prodAnalyseDonnees(){
+  const pb = [];
+  const ajoute = (grave, titre, detail, libelle, action) =>
+    pb.push({grave, titre, detail, libelle, action});
+
+  const actives = prodMachines();
+  if(!actives.length)
+    ajoute(true, 'Aucune imprimante en service',
+      "Sans machine, rien ne peut être planifié.", 'Voir les imprimantes',
+      "setSub('production','machines')");
+
+  // Lieux sans présence : les machines ne se libèrent jamais
+  (state.sites||[]).forEach(s=>{
+    const h = prodHeuresSemaine(s);
+    const n = (state.printers||[]).filter(p=>p.siteId === s.id && p.actif !== false).length;
+    if(!n) return;
+    if(h <= 0)
+      ajoute(true, `Lieu « ${s.nom} » : aucune heure de présence`,
+        `${n} imprimante${n>1?'s':''} y ${n>1?'sont':'est'} rattachée${n>1?'s':''}. Sans présence, personne ne vide les plateaux et les machines restent bloquées.`,
+        'Corriger ce lieu', `prodOpenLieu('${s.id}')`);
+    else if(h < 6)
+      ajoute(false, `Lieu « ${s.nom} » : seulement ${h.toFixed(1)} h de présence par semaine`,
+        "Très peu de créneaux pour libérer les machines : le calcul s'allonge beaucoup.",
+        'Vérifier ce lieu', `prodOpenLieu('${s.id}')`);
+  });
+
+  // Imprimantes rattachées à un lieu disparu
+  (state.printers||[]).forEach(p=>{
+    if(p.actif === false) return;
+    if(!(state.sites||[]).some(s=>s.id === p.siteId))
+      ajoute(false, `Imprimante « ${p.nom} » : sans lieu`,
+        "Elle n'est rattachée à aucun lieu existant.", "Corriger l'imprimante",
+        `prodOpenMachineEdit('${p.id}')`);
+  });
+
+  // Articles mal renseignés
+  (state.recipes||[]).forEach(r=>{
+    const utilise = prodCommandesEnCours().some(o=>(o.lignes||[]).some(l=>l.recipeId === r.id && prodReste(o,l) > 0));
+    if(!utilise) return;
+    if(!(r.printerIds||[]).some(id=>{ const p = prodImprimante(id); return p && p.actif !== false; }))
+      ajoute(true, `Article « ${r.nom} » : aucune imprimante capable`,
+        "Il est commandé mais aucune machine en service ne peut le produire.",
+        "Corriger l'article", `prodOpenArticle('${r.id}')`);
+    const min = Number(r.minutesPiece);
+    if(!isFinite(min) || min <= 0)
+      ajoute(true, `Article « ${r.nom} » : durée d'impression absente`,
+        "Sans durée, impossible de savoir quand la machine se libère.",
+        "Corriger l'article", `prodOpenArticle('${r.id}')`);
+    else if(min < 5)
+      ajoute(false, `Article « ${r.nom} » : durée de ${min} min`,
+        "Une durée aussi courte multiplie les impressions à planifier. Vérifiez qu'il ne s'agit pas d'heures.",
+        "Vérifier l'article", `prodOpenArticle('${r.id}')`);
+    if(Number(r.piecesParImpression) > 0 && Number(r.piecesParImpression) > 50)
+      ajoute(false, `Article « ${r.nom} » : ${r.piecesParImpression} pièces par impression`,
+        "Valeur inhabituelle, vérifiez-la.", "Vérifier l'article", `prodOpenArticle('${r.id}')`);
+  });
+
+  // Commandes : quantités démesurées, lignes orphelines, dates manquantes
+  let impressions = 0;
+  prodCommandesEnCours().forEach(o=>{
+    if(!o.dateLivraison)
+      ajoute(false, `Commande « ${o.client||'sans client'} » : pas de date de livraison`,
+        "Le planning ne peut pas savoir si elle est en retard.", 'Ouvrir la commande',
+        `prodOpenCommande('${o.id}')`);
+    (o.lignes||[]).forEach(l=>{
+      const r = prodRecette(l.recipeId);
+      if(!r){
+        ajoute(false, `Commande « ${o.client||'sans client'} » : article supprimé`,
+          "Une ligne pointe vers un article qui n'existe plus.", 'Ouvrir la commande',
+          `prodOpenCommande('${o.id}')`);
+        return;
+      }
+      const q = prodReste(o, l);
+      const nb = Math.ceil(q / Math.max(1, Number(r.piecesParImpression)||1));
+      impressions += nb;
+      if(q > 2000)
+        ajoute(true, `Commande « ${o.client||'sans client'} » : ${q} × ${r.nom}`,
+          `Quantité énorme, soit ${nb} impressions à planifier. Un zéro de trop ?`,
+          'Corriger la quantité', `prodOpenCommande('${o.id}')`);
+      else if(q > 500)
+        ajoute(false, `Commande « ${o.client||'sans client'} » : ${q} × ${r.nom}`,
+          `${nb} impressions à planifier. Vérifiez la quantité.`,
+          'Ouvrir la commande', `prodOpenCommande('${o.id}')`);
+    });
+  });
+  if(impressions > 3000)
+    ajoute(true, `${impressions} impressions à planifier au total`,
+      "C'est au-delà de ce que le téléphone peut calculer en quelques secondes. Les lignes ci-dessus indiquent d'où ça vient.",
+      null, null);
+
+  return pb.sort((a,b)=> (b.grave?1:0) - (a.grave?1:0));
+}
+
+/* Le bloc qui présente ces problèmes, avec un bouton par correction. */
+function prodBlocAnalyse(intro){
+  const pb = prodAnalyseDonnees();
+  const liste = pb.length ? pb.map(x=>`
+    <div class="prod-row" style="border-left:3px solid ${x.grave?'var(--rust)':'var(--amber)'};">
+      <div class="prod-row-nom">${esc(x.titre)}</div>
+      <div class="prod-row-sub">${esc(x.detail)}</div>
+      ${x.action ? `<button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="${x.action}">${esc(x.libelle)}</button>` : ''}
+    </div>`).join('')
+    : `<div class="prod-row"><div class="prod-row-sub">Aucune donnée manifestement anormale n'a été trouvée.
+        Le volume total est peut-être simplement trop important pour ce téléphone.</div></div>`;
+  return `${intro ? `<p class="prod-note" style="margin:0 0 10px 0;">${intro}</p>` : ''}${liste}`;
+}
+
 function viewProduction(){
   const sub = activeSub.production || 'planning';
   return `
@@ -4610,22 +4747,39 @@ function viewProduction(){
       <button class="subtab-btn ${sub==='machines'?'active':''}" onclick="setSub('production','machines')">Imprimantes</button>
       <button class="subtab-btn ${sub==='lieux'?'active':''}" onclick="setSub('production','lieux')">Lieux</button>
     </div>
-    ${ sub==='planning'  ? viewProdPlanning()
-     : sub==='suivi'     ? viewProdSuivi()
-     : sub==='commandes' ? viewProdCommandes()
-     : sub==='articles'  ? viewProdArticles()
-     : sub==='lieux'     ? viewProdLieux()
-     :                     viewProdMachines() }
+    ${ prodSousVue(sub) }
   </div>`;
+}
+
+/* Si une sous-vue plante, les sous-onglets restent là : on peut toujours
+   aller corriger une commande ou un article. */
+function prodSousVue(sub){
+  try{
+    return sub==='planning'  ? viewProdPlanning()
+         : sub==='suivi'     ? viewProdSuivi()
+         : sub==='commandes' ? viewProdCommandes()
+         : sub==='articles'  ? viewProdArticles()
+         : sub==='lieux'     ? viewProdLieux()
+         :                     viewProdMachines();
+  }catch(e){
+    console.error('Sous-vue production', e);
+    return `<div class="prod-row" style="border-left:3px solid var(--rust);">
+        <div class="prod-row-nom">Cet écran n'a pas pu s'afficher</div>
+        <div class="prod-row-sub">${esc(String(e && e.message || e))}</div></div>
+      <h3 class="prod-h">Ce qui peut bloquer le calcul</h3>
+      ${prodBlocAnalyse('Chaque point ci-dessous désigne une donnée précise. Corrigez-la, puis revenez sur le Planning.')}`;
+  }
 }
 
 function viewProdPlanning(){
   const p = prodPlanning();
   if(p.erreur) return `<div class="prod-row" style="border-left:3px solid var(--rust);">
       <div class="prod-row-nom">Le planning n'a pas pu être calculé</div>
-      <div class="prod-row-sub" style="white-space:pre-wrap;">${esc(p.erreur)}</div>
-      <div class="prod-row-sub" style="margin-top:6px;">Le reste de l'application fonctionne normalement.
-        Envoyez une capture de ce message pour que le problème soit corrigé.</div></div>`;
+      <div class="prod-row-sub">Le calcul a dépassé le temps autorisé. Le reste de l'application fonctionne normalement.</div></div>
+    <h3 class="prod-h">Ce qui peut bloquer le calcul</h3>
+    ${prodBlocAnalyse('Chaque point ci-dessous désigne une donnée précise. Corrigez-la, puis revenez sur le Planning.')}
+    <details style="margin-top:14px;"><summary class="prod-note" style="cursor:pointer;">Détail technique</summary>
+      <div class="prod-row-sub" style="white-space:pre-wrap;margin-top:6px;">${esc(p.erreur)}</div></details>`;
   if(!(state.orders||[]).length)
     return `<div class="empty">Aucune commande enregistrée. Ajoutez-en une : le planning se calcule tout seul.</div>`;
   if(!p.sim.commandes.length)
