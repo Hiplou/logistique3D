@@ -84,7 +84,7 @@
 })();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.31)
+  Gestion de stock — stock et production 3D  (v1.32)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -99,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.31]</title>
+<title>Gestion de stock [v1.32]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -537,7 +537,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.31</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.32</p>
   </div>
 </div>
 
@@ -547,7 +547,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.31</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.32</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1416,7 +1416,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.31';
+const VERSION = 'v1.32';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -4524,14 +4524,50 @@ function prodPlanning(){
   __prodLimite = Date.now() + 3000;
   const machines = prodMachines();
   const sites = state.sites || [];
-  // 1. Sans contrainte de matière : on apprend ce qui sera consommé et quand.
-  const libre = prodSimule(machines, sites, {matiere:false});
-  // 2. Le plan de commandes en découle, échelonné et au plus tard.
-  const appro = prodPlanAppro(libre.conso);
-  // 3. On rejoue en tenant compte des dates d'arrivée réelles.
-  const sim = prodSimule(machines, sites, {arrivees: appro.arrivees});
-  const val = {sim, libre, appro, alertes: prodBobines(sim, appro),
-               conf: prodConf(), machines: machines.length};
+  let val;
+  try{
+    // 1. Sans contrainte de matière : on apprend ce qui sera consommé et quand.
+    const libre = prodSimule(machines, sites, {matiere:false});
+    // 2. Le plan de commandes en découle, échelonné et au plus tard.
+    const appro = prodPlanAppro(libre.conso);
+    // 3. On rejoue en tenant compte des dates d'arrivée réelles.
+    const sim = prodSimule(machines, sites, {arrivees: appro.arrivees});
+    val = {sim, libre, appro, alertes: prodBobines(sim, appro),
+           conf: prodConf(), machines: machines.length};
+  }catch(e){
+    // L'échec est mémorisé comme un résultat : sans cela, chaque rendu relançait
+    // le calcul, qui échouait de nouveau trois secondes plus tard, indéfiniment.
+    console.error('Planning impossible', e);
+    // On joint un bilan chiffr\u00e9 des donn\u00e9es : une capture suffit alors \u00e0 savoir ce qui p\u00e8se.
+    let bilan = '';
+    try{
+      let pieces = 0, maxLigne = 0, lignes = 0;
+      prodCommandesEnCours().forEach(o=>(o.lignes||[]).forEach(l=>{
+        const q = prodReste(o, l); pieces += q; lignes++; if(q > maxLigne) maxLigne = q;
+      }));
+      const heures = s => {
+        const pl = prodNormalisePlanning(s.planning); let m = 0;
+        for(let j = 0; j <= 6; j++) (pl[j]||[]).forEach(x=>{
+          const [a,b] = x.de.split(':').map(Number), [c,d] = x.a.split(':').map(Number);
+          m += Math.max(0, (c*60+d) - (a*60+b));
+        });
+        return Math.round(m/60);
+      };
+      const lieux = (state.sites||[]).map(s=>`${s.nom} ${heures(s)} h/sem.`).join(', ') || 'aucun';
+      const sansMachine = (state.recipes||[]).filter(r=>!(r.printerIds||[]).length).length;
+      bilan = `\n\nBilan : ${prodCommandesEnCours().length} commandes en cours, ${lignes} lignes, `
+        + `${pieces} pi\u00e8ces \u00e0 produire (la plus grosse ligne : ${maxLigne}). `
+        + `${machines.length} imprimante(s) en service. Lieux : ${lieux}. `
+        + `${(state.recipes||[]).length} articles dont ${sansMachine} sans imprimante. `
+        + `${(state.products||[]).length} produits, ${(state.movements||[]).length} mouvements.`;
+    }catch(e2){}
+    const vide = {commandes:[], jobs:[], enRetard:[], conso:{}, attentes:{}};
+    val = {erreur: String(e && e.message || e) + bilan, sim: vide, libre: vide,
+           appro: {commandes:[], arrivees:{}}, alertes: [], remedes: {base: vide, ok: true, pistes: []},
+           conf: prodConf(), machines: machines.length};
+  }finally{
+    __prodLimite = 0;
+  }
   window.__prodCache = {cle, val};
   return val;
 }
@@ -4585,6 +4621,11 @@ function viewProduction(){
 
 function viewProdPlanning(){
   const p = prodPlanning();
+  if(p.erreur) return `<div class="prod-row" style="border-left:3px solid var(--rust);">
+      <div class="prod-row-nom">Le planning n'a pas pu être calculé</div>
+      <div class="prod-row-sub" style="white-space:pre-wrap;">${esc(p.erreur)}</div>
+      <div class="prod-row-sub" style="margin-top:6px;">Le reste de l'application fonctionne normalement.
+        Envoyez une capture de ce message pour que le problème soit corrigé.</div></div>`;
   if(!(state.orders||[]).length)
     return `<div class="empty">Aucune commande enregistrée. Ajoutez-en une : le planning se calcule tout seul.</div>`;
   if(!p.sim.commandes.length)
