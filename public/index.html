@@ -84,7 +84,7 @@
 })();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.40)
+  Gestion de stock — stock et production 3D  (v1.41)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -99,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.40]</title>
+<title>Gestion de stock [v1.41]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -551,7 +551,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.40</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.41</p>
   </div>
 </div>
 
@@ -561,7 +561,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.40</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.41</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -746,6 +746,7 @@ function applyData(d){
   state.artCats    = (d && d.artCats)    || [];
   // Stock de production : reconstitu\u00e9 \u00e0 la premi\u00e8re ouverture \u00e0 partir de
   // l'historique des impressions valid\u00e9es et des livraisons.
+  try{ prodOublieCalculs(); }catch(e){}
   if(d && Array.isArray(d.prodMoves)) state.prodMoves = d.prodMoves;
   else { state.prodMoves = prodReconstitueStock(); window.__prodStockNeuf = true; }
 }
@@ -924,6 +925,15 @@ async function manualRefresh(btn){
     if(btn){ btn.disabled = false; btn.innerHTML = '🔄 Rafraîchir'; }
   }
 }
+/* JSON ind\u00e9pendant de l'ordre des cl\u00e9s, pour comparer local et serveur. */
+function jsonStable(v){
+  if(Array.isArray(v)) return '[' + v.map(jsonStable).join(',') + ']';
+  if(v && typeof v === 'object'){
+    return '{' + Object.keys(v).filter(k=>v[k] !== undefined).sort()
+      .map(k=>JSON.stringify(k) + ':' + jsonStable(v[k])).join(',') + '}';
+  }
+  return JSON.stringify(v === undefined ? null : v);
+}
 async function refreshFromCloud(silent){
   if(!cloudReady() || !account) return;
   if(__syncDirty || __syncing) return;               // envoi en attente : on ne touche à rien
@@ -936,10 +946,11 @@ async function refreshFromCloud(silent){
     );
     if(error || !data) return;
     const d = data.donnees || {};
-    // Ne réafficher que si quelque chose a réellement changé (évite de faire clignoter l'écran)
-    const incoming = JSON.stringify([d.products||[], d.movements||[], d.categories||[], d.suppliers||[]]);
-    const current  = JSON.stringify([state.products, state.movements, state.categories, state.suppliers]);
-    if(incoming === current){ return; }
+    // On compare toutes les donn\u00e9es, production comprise. Avant, seul le stock
+    // de mati\u00e8res \u00e9tait compar\u00e9 : un ajustement du stock de production fait sur
+    // un autre appareil n'arrivait jamais ici. Le serveur r\u00e9ordonne les cl\u00e9s,
+    // d'o\u00f9 une comparaison qui les trie.
+    if(jsonStable(d) === jsonStable(currentData())){ return; }
     applyData(d);
     saveLocalMirror();
     renderTabs();
@@ -1435,7 +1446,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.40';
+const VERSION = 'v1.41';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -4002,6 +4013,7 @@ function prodAllocation(){
       const pris = Math.min(q, dispo[l.recipeId] || 0);
       dispo[l.recipeId] = (dispo[l.recipeId] || 0) - pris;
       reste[o.id + '|' + i] = q - pris;
+      if(pris > 0) (reste.__attrib = reste.__attrib || []).push({orderId: o.id, recipeId: l.recipeId, qte: pris});
     }));
   __allocCle = cle; __allocation = reste;
   return reste;
@@ -4010,6 +4022,17 @@ function prodReste(o, l){
   if(o.livree) return 0;
   const v = prodAllocation()[o.id + '|' + (o.lignes||[]).indexOf(l)];
   return v === undefined ? qteNum(l.qte) : Math.max(0, v);
+}
+/* Combien de pi\u00e8ces du stock de production sont attribu\u00e9es \u00e0 une commande,
+   ou, pour un article, \u00e0 quelles commandes va son stock. */
+function prodAttribuees(orderId){
+  return (prodAllocation().__attrib || []).filter(a=>a.orderId === orderId).reduce((t,a)=>t + a.qte, 0);
+}
+function prodAttributionArticle(recipeId){
+  const parCmd = {};
+  (prodAllocation().__attrib || []).filter(a=>a.recipeId === recipeId)
+    .forEach(a=>{ parCmd[a.orderId] = (parCmd[a.orderId] || 0) + a.qte; });
+  return Object.keys(parCmd).map(id=>({o: (state.orders||[]).find(x=>x.id === id), qte: parCmd[id]})).filter(x=>x.o);
 }
 /* Une commande est produite quand le stock couvre toutes ses lignes. */
 function prodCouverte(o){
@@ -4145,6 +4168,7 @@ function prodAnnuleLivraison(orderId){
   if(!o || !o.livree) return;
   askConfirm('Annuler la livraison ? Les pi\u00e8ces reviennent en stock.', async ()=>{
     state.prodMoves = prodMouvements().filter(m=>!(m.orderId === o.id && m.source === 'livraison'));
+    prodOublieCalculs();
     o.livree = false; o.livreeLe = null;
     scheduleCloudSave(); closeModal(); toast('Livraison annul\u00e9e'); renderContent();
   });
@@ -4925,6 +4949,11 @@ function prodDernierPrix(recipeId){
   const l = o.lignes.find(l=>l.recipeId === recipeId && qteNum(l.prix) > 0);
   return l ? l.prix : '';
 }
+/* Oublie les calculs en m\u00e9moire : le prochain affichage repart des donn\u00e9es. */
+function prodOublieCalculs(){
+  window.__prodCache = null;
+  __allocation = null; __allocCle = '';
+}
 function prodMouvements(){ return state.prodMoves || (state.prodMoves = []); }
 
 function prodStockArticle(recipeId){
@@ -4941,6 +4970,7 @@ function prodAjoutMouvement(recipeId, type, qty, source, note, extra){
     date: new Date().toISOString(), user: state.user || null,
     source: source || 'manuel', note: note || ''}, extra || {});
   prodMouvements().push(m);
+  prodOublieCalculs();
   return m;
 }
 
@@ -4990,6 +5020,7 @@ function viewStockProduction(){
         <div class="prod-row-nom">${esc(r.nom)}</div>
         <div class="prod-row-sub">${aLivrer[r.id] ? `${aLivrer[r.id]} en commande` : 'Aucune commande en cours'}${
           dernier ? ` \u00b7 derni\u00e8re entr\u00e9e ${fmtDate(dernier.date)}` : ''}</div>
+        ${prodAttributionArticle(r.id).map(a=>`<div class="prod-row-sub" style="color:var(--teal);font-weight:600;">\u2192 ${a.qte} attribu\u00e9e${a.qte>1?'s':''} \u00e0 ${esc(a.o.client||'une commande')}</div>`).join('')}
       </div>
       <div style="text-align:right;flex:none;">
         <div style="font-family:'Fraunces',serif;font-size:24px;font-weight:600;line-height:1;color:${s < 0 ? 'var(--rust)' : 'var(--ink)'};">${s}</div>
@@ -5012,7 +5043,11 @@ function prodOpenStockArticle(id){
   openModal(`
     <h3>${esc(r.nom)}</h3>
     <div style="font-family:'Fraunces',serif;font-size:34px;font-weight:600;line-height:1;margin:0 0 4px 0;">${prodStockArticle(id)}</div>
-    <p class="prod-note" style="margin:0 0 16px 0;">pi\u00e8ces en stock de production</p>
+    <p class="prod-note" style="margin:0 0 6px 0;">pi\u00e8ces en stock de production</p>
+    ${(()=>{ const at = prodAttributionArticle(id);
+      return at.length ? `<p class="prod-note" style="margin:0 0 16px 0;">Attribu\u00e9es aux commandes, la plus urgente d'abord : ${
+        at.map(a=>`${esc(a.o.client||'commande')} ${a.qte}`).join(', ')}. Tout ajustement recalcule aussit\u00f4t leurs d\u00e9lais.</p>`
+      : `<p class="prod-note" style="margin:0 0 16px 0;">Aucune commande en cours pour cet article.</p>`; })()}
     <div class="field"><label>Ajuster le stock \u2014 casse, vente directe, inventaire</label>
       <div style="display:flex;gap:8px;">
         <select id="psa-sens" style="flex:none;width:auto;">
@@ -5161,7 +5196,7 @@ function viewProdPlanning(){
     return `<div class="prod-row" style="border-left:3px solid ${coul};" onclick="prodOpenCommande('${x.o.id}')">
       <div class="prod-row-nom">${esc(x.o.client||'Sans client')} · à livrer le ${fmtDate(x.o.dateLivraison)}${
         x.o.siteId ? ` · ${esc(prodNomLieu(x.o.siteId))}` : ''}</div>
-      <div class="prod-row-sub">${fait>0?`${fait} sur ${n} pièce${n>1?'s':''} déjà imprimée${fait>1?'s':''}`:`${n} pièce${n>1?'s':''}`} · ${(x.minutes/60).toFixed(1)} h restantes · démarrage le ${fmtDate(x.debut)}</div>
+      <div class="prod-row-sub">${fait>0?`${fait} en stock pour cette commande, ${x.resteTotal} \u00e0 imprimer`:`${n} pièce${n>1?'s':''} \u00e0 imprimer`} · ${(x.minutes/60).toFixed(1)} h restantes · démarrage le ${fmtDate(x.debut)}</div>
       <div class="prod-row-sub" style="color:${coul};font-weight:600;">${etat}</div>
     </div>`;
   }).join('');
@@ -5523,7 +5558,7 @@ function prodAnnuleDerniere(){
   if(!L.length){ toast('Rien à annuler'); return; }
   askConfirm('Annuler la dernière validation ?', async ()=>{
     const r = L.pop();
-    if(r) state.prodMoves = prodMouvements().filter(m=>m.runId !== r.id);
+    if(r){ state.prodMoves = prodMouvements().filter(m=>m.runId !== r.id); prodOublieCalculs(); }
     const o = r ? (state.orders||[]).find(x=>x.id===r.orderId) : null;
     scheduleCloudSave(); closeModal(); toast('Validation annulée'); renderContent();
   });
@@ -6135,7 +6170,7 @@ function prodPrevision(o){
   let x = null;
   try{ x = prodPlanning().sim.commandes.find(c=>c.o.id === o.id); }catch(e){}
   if(!x) return {texte: 'Pr\u00e9vision indisponible', coul: 'var(--ink-soft)'};
-  const stock = (o.lignes||[]).reduce((t,l)=>t + qteNum(l.qte), 0) - x.resteTotal;
+  const stock = prodAttribuees(o.id);
   const part = stock > 0 ? `${stock} d\u00e9j\u00e0 en stock, ${x.resteTotal} \u00e0 imprimer \u00b7 ` : `${x.resteTotal} \u00e0 imprimer \u00b7 `;
   if(x.sansMachine) return {texte: part + 'aucune imprimante ne peut la produire', coul: 'var(--rust)'};
   if(!x.fin) return {texte: part + 'pr\u00e9vision indisponible', coul: 'var(--ink-soft)'};
