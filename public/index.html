@@ -84,7 +84,7 @@
 })();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.38)
+  Gestion de stock — stock et production 3D  (v1.39)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -99,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.38]</title>
+<title>Gestion de stock [v1.39]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -551,7 +551,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.38</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.39</p>
   </div>
 </div>
 
@@ -561,7 +561,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.38</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.39</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1435,7 +1435,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.38';
+const VERSION = 'v1.39';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -4592,7 +4592,7 @@ function prodRemedesCalcul(){
         const capable = prodMachinesPour(o, r).length > 0;
         if(!capable && o.siteId && (r.printerIds||[]).length) pistes.push({
           texte: `\u00ab ${nom} \u00bb est r\u00e9serv\u00e9e \u00e0 ${prodNomLieu(o.siteId)}, o\u00f9 aucune machine ne sait faire \u00ab ${r.nom} \u00bb`,
-          detail: "Changez le lieu de la commande, ou rattachez \u00e0 cet article une imprimante de ce lieu.",
+          detail: "Changez le lieu de la commande, ou autorisez ce lieu dans la fiche de l'article.",
           libelle: 'Changer le lieu', action: `prodOpenCommande('${o.id}')`, suffit: false, grave: true});
         else if(!capable) pistes.push({
           texte: `« ${nom} » : l'article « ${r.nom} » n'est rattaché à aucune imprimante en service`,
@@ -5800,7 +5800,9 @@ function viewProdListeArticles(){
       <div class="prod-row-nom">${cat?`<span class="cat-pastille" style="background:${cat.couleur};"></span>`:''}${esc(r.nom)}</div>
       ${cat?`<div class="prod-row-sub" style="color:${cat.couleur};font-weight:600;">${esc(cat.nom)}</div>`:''}
       <div class="prod-row-sub">${f?esc(f.name):'Bobine non renseign\u00e9e'} \u00b7 ${r.piecesParBobine||'?'} pi\u00e8ces par bobine</div>
-      <div class="prod-row-sub">${prodDuree(r.minutesPiece)} par impression${pp>1?`, ${pp} pi\u00e8ces \u00e0 la fois`:''} \u00b7 ${m?`${m} imprimante${m>1?'s':''}`:'aucune imprimante'}</div>
+      <div class="prod-row-sub">${prodDuree(r.minutesPiece)} par impression${pp>1?`, ${pp} pi\u00e8ces \u00e0 la fois`:''} \u00b7 ${m?`${m} imprimante${m>1?'s':''}`:'aucune imprimante'}${
+        Array.isArray(r.siteIds) && r.siteIds.length < (state.sites||[]).length
+          ? ` \u00b7 ${r.siteIds.map(prodNomLieu).filter(Boolean).join(', ') || 'aucun lieu'}` : ''}</div>
       <div class="prod-row-sub">Stock de production : ${prodStockArticle(r.id)} pi\u00e8ce${Math.abs(prodStockArticle(r.id))>1?'s':''}</div>
     </div>`;
   }).join('') : `<div class="empty">Aucun article. Un article, c'est la recette d'impression d'une pi\u00e8ce : sa bobine, son rendement, sa dur\u00e9e.</div>`;
@@ -5926,13 +5928,27 @@ function prodOpenArticle(id){
     <div class="field"><label>Imprimantes capables de la produire</label>
       ${Object.keys(modeles).length ? Object.keys(modeles).sort().map(mod=>{
         const l = modeles[mod];
-        const coche = l.some(m=>choisis.includes(m.id));
+        const coche = (r && Array.isArray(r.modeles)) ? r.modeles.includes(mod) : l.some(m=>choisis.includes(m.id));
         return `<div class="checkline">
           <input type="checkbox" id="pa-mod-${esc(mod).replace(/[^A-Za-z0-9]/g,'_')}" data-modele="${esc(mod)}" ${coche?'checked':''}>
           <label for="pa-mod-${esc(mod).replace(/[^A-Za-z0-9]/g,'_')}" style="margin:0;text-transform:none;font-weight:500;color:var(--ink-soft);">
             ${esc(mod)} <span style="opacity:.6;">\u00b7 ${l.length} machine${l.length>1?'s':''}</span></label>
         </div>`;
       }).join('') : `<p class="prod-note">Aucune imprimante enregistr\u00e9e pour l'instant.</p>`}
+    </div>
+
+    <div class="field"><label>Lieux o\u00f9 il peut \u00eatre imprim\u00e9</label>
+      ${(state.sites||[]).length ? (state.sites||[]).map(s=>{
+        // Par d\u00e9faut tout est coch\u00e9 ; un article d\u00e9j\u00e0 r\u00e9gl\u00e9 garde son choix.
+        const coche = !(r && Array.isArray(r.siteIds)) || r.siteIds.includes(s.id);
+        const n = (state.printers||[]).filter(m=>m.siteId === s.id && m.actif !== false).length;
+        return `<div class="checkline">
+          <input type="checkbox" id="pa-lieu-${s.id}" ${coche?'checked':''}>
+          <label for="pa-lieu-${s.id}" style="margin:0;text-transform:none;font-weight:500;color:var(--ink-soft);">
+            ${esc(s.nom)} <span style="opacity:.6;">\u00b7 ${n} machine${n>1?'s':''}</span></label>
+        </div>`;
+      }).join('') : `<p class="prod-note">Aucun lieu enregistr\u00e9 pour l'instant.</p>`}
+      <p class="prod-note" style="margin-top:6px;">L'article ne sera planifi\u00e9 que sur les machines des mod\u00e8les coch\u00e9s, situ\u00e9es dans les lieux coch\u00e9s.</p>
     </div>
 
     <div class="modal-actions">
@@ -6054,10 +6070,16 @@ function prodAppliqueArticle(silencieux){
   (state.printers||[]).forEach(m=>{
     const cle = 'pa-mod-' + String(m.modele || 'Sans mod\u00e8le').replace(/[^A-Za-z0-9]/g,'_');
     const c = document.getElementById(cle);
-    if(c && c.checked) ids.push(m.id);
+    const lieu = document.getElementById('pa-lieu-' + m.siteId);
+    if(c && c.checked && (!lieu || lieu.checked)) ids.push(m.id);
   });
+  const modeles = [...new Set((state.printers||[]).map(m=>m.modele || 'Sans mod\u00e8le'))].filter(mod=>{
+    const e = document.getElementById('pa-mod-' + String(mod).replace(/[^A-Za-z0-9]/g,'_')); return e && e.checked; });
+  const siteIds = (state.sites||[]).filter(s=>{
+    const e = document.getElementById('pa-lieu-' + s.id); return !e || e.checked; }).map(s=>s.id);
   const donnees = {
     nom,
+    siteIds, modeles,
     catId: (document.getElementById('pa-cat')||{}).value || null,
     filamentId: (document.getElementById('pa-fil')||{}).value || null,
     piecesParBobine: Math.max(1, parseInt((document.getElementById('pa-rend')||{}).value, 10) || 1),
