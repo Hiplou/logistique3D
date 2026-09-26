@@ -84,7 +84,7 @@
 })();
 </script>
 <!--
-  Gestion de stock — stock et production 3D  (v1.39)
+  Gestion de stock — stock et production 3D  (v1.40)
   © 2026 Hippolyte Houdard. Tous droits réservés.
   Application conçue et développée par Hippolyte Houdard, mise à disposition de
   ses utilisateurs sous licence.
@@ -99,7 +99,7 @@
 <meta name="theme-color" content="#142C7A">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>Gestion de stock [v1.39]</title>
+<title>Gestion de stock [v1.40]</title>
 <!-- Icônes du raccourci sur l'écran d'accueil -->
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -551,7 +551,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
     <p id="login-switch" style="margin:6px 0 0 0;font-size:11.5px;display:none;">
       <a href="#" onclick="forgetAccount();return false;" style="color:#1B3FB0;">Se connecter avec un autre compte</a>
     </p>
-    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.39</p>
+    <p style="margin:14px 0 0 0;font-size:11px;color:#A79C8D;">Version v1.40</p>
   </div>
 </div>
 
@@ -561,7 +561,7 @@ document.addEventListener('visibilitychange',mk);window.addEventListener('pagesh
       <div id="brand">
         <img class="logo-top" src="/img/logo.png" alt="" onload="this.style.display='block';"><span id="brand-name" class="acct"></span>
         
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.39</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:999px;color:#C9D2F4;margin-left:4px;">v1.40</span>
         <span id="sync-indicator" style="display:none;align-items:center;gap:5px;font-size:10.5px;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;color:#EDF0FC;margin-left:4px;"></span>
       </div>
       <button id="userbadge" onclick="openProfilMenu()" title="Profil et compte" aria-label="Profil et compte">
@@ -1435,7 +1435,7 @@ function openProfilMenu(){
 }
 /* Nom de l'atelier. Il vit à deux endroits : dans les métadonnées du compte
    côté serveur, et dans la colonne nom de la table. On met les deux à jour. */
-const VERSION = 'v1.39';
+const VERSION = 'v1.40';
 function majTitre(){
   try{
     document.title = (account && account.nom ? account.nom + ' · ' : '') + 'Stock [' + VERSION + ']';
@@ -3731,14 +3731,11 @@ function exportInventairePDF(){
   toast("PDF téléchargé");
 }
 
+/* La sauvegarde contient tout ce que l'application enregistre : stock, mais
+   aussi production \u2014 commandes, articles, imprimantes, lieux, stock de
+   production. L'ancienne version n'emportait que le stock. */
 function backupPayload(){
-  return {
-    exported_at: new Date().toISOString(),
-    products: state.products,
-    movements: state.movements,
-    categories: state.categories,
-    suppliers: state.suppliers
-  };
+  return Object.assign({exported_at: new Date().toISOString(), version: VERSION}, currentData());
 }
 function normalizeCategories(cats){
   if(!cats || !Array.isArray(cats) || cats.length===0) return [...CATS_DEFAULT];
@@ -3884,13 +3881,29 @@ function importJSON(ev){
     catch(e){ toast("Fichier invalide"); return; }
     const nbProd = (data.products||[]).length;
     const nbMouv = (data.movements||[]).length;
-    askConfirm(`Restaurer ${nbProd} produit(s) et ${nbMouv} mouvement(s) ? Cela remplacera les données actuelles.`, async ()=>{
-      state.products = data.products||[];
-      state.movements = data.movements||[];
-      state.categories = normalizeCategories(data.categories);
-      state.suppliers = data.suppliers||[];
+    const nbCmd  = (data.orders||[]).length;
+    const nbArt  = (data.recipes||[]).length;
+    // Une sauvegarde d'avant la v1.40 ne contient pas la production : on ne
+    // doit pas effacer la production actuelle en la restaurant.
+    const complete = Array.isArray(data.orders) || Array.isArray(data.recipes) || Array.isArray(data.printers);
+    const question = complete
+      ? `Restaurer la sauvegarde compl\u00e8te : ${nbProd} produit(s), ${nbMouv} mouvement(s), ${nbArt} article(s), ${nbCmd} commande(s) ? Toutes les donn\u00e9es actuelles seront remplac\u00e9es.`
+      : `Cette sauvegarde ancienne ne contient que le stock (${nbProd} produit(s), ${nbMouv} mouvement(s)). Restaurer ce stock en gardant la production actuelle ?`;
+    askConfirm(question, async ()=>{
+      if(complete){
+        applyData(data);
+      }else{
+        state.products = data.products||[];
+        state.movements = data.movements||[];
+        state.categories = normalizeCategories(data.categories);
+        state.suppliers = data.suppliers||[];
+      }
+      window.__prodCache = null;
       await saveProducts(); await saveMovements(); await saveCategories(); await saveSuppliers();
-      closeModal(); toast(`Restauré : ${nbProd} produits, ${nbMouv} mouvements`); renderTabs(); renderContent();
+      scheduleCloudSave();
+      closeModal();
+      toast(complete ? `Restaur\u00e9 : ${nbProd} produits, ${nbArt} articles, ${nbCmd} commandes` : `Stock restaur\u00e9 : ${nbProd} produits`);
+      renderTabs(); renderContent();
     });
   };
   reader.readAsText(file);
@@ -6113,6 +6126,23 @@ function prodSupprArticle(id){
 }
 
 /* ------------------------------ COMMANDES ------------------------------ */
+/* Pr\u00e9vision d'une commande : la date \u00e0 laquelle elle sera r\u00e9ellement pr\u00eate,
+   compte tenu du stock de production et des machines. \u00c0 ne pas confondre
+   avec la date de livraison saisie, qui est l'objectif promis au client. */
+function prodPrevision(o){
+  if(o.livree) return null;
+  if(prodCouverte(o)) return {texte: 'Toutes les pi\u00e8ces sont en stock, pr\u00eate \u00e0 livrer', coul: 'var(--green)'};
+  let x = null;
+  try{ x = prodPlanning().sim.commandes.find(c=>c.o.id === o.id); }catch(e){}
+  if(!x) return {texte: 'Pr\u00e9vision indisponible', coul: 'var(--ink-soft)'};
+  const stock = (o.lignes||[]).reduce((t,l)=>t + qteNum(l.qte), 0) - x.resteTotal;
+  const part = stock > 0 ? `${stock} d\u00e9j\u00e0 en stock, ${x.resteTotal} \u00e0 imprimer \u00b7 ` : `${x.resteTotal} \u00e0 imprimer \u00b7 `;
+  if(x.sansMachine) return {texte: part + 'aucune imprimante ne peut la produire', coul: 'var(--rust)'};
+  if(!x.fin) return {texte: part + 'pr\u00e9vision indisponible', coul: 'var(--ink-soft)'};
+  if(x.retard) return {texte: part + `pr\u00eate le ${fmtDate(x.fin)}, ${x.jourRetard} jour${x.jourRetard>1?'s':''} de retard`, coul: 'var(--rust)'};
+  return {texte: part + `pr\u00eate le ${fmtDate(x.fin)}, \u00e0 l'heure`, coul: 'var(--green)'};
+}
+
 function viewProdCommandes(){
   const ordre = {production:0, produite:1, livree:2};
   const l = (state.orders||[]).slice().sort((a,b)=>
@@ -6128,6 +6158,7 @@ function viewProdCommandes(){
           o.siteId ? ` \u00b7 ${esc(prodNomLieu(o.siteId) || 'lieu supprim\u00e9')}` : ''}${
           prodTotal(o).saisi ? ` \u00b7 ${fmtEUR(prodTotal(o).ttc)} TTC` : ''}</div>
         <div class="prod-row-sub" style="color:${e.coul};font-weight:600;">${e.txt}</div>
+        ${(()=>{ const pv = prodPrevision(o); return pv ? `<div class="prod-row-sub" style="color:${pv.coul};">Pr\u00e9vision : ${esc(pv.texte)}</div>` : ''; })()}
       </div>
       ${prodPastille(o)}
     </div>`;
@@ -6167,7 +6198,12 @@ function prodOpenCommande(id){
       <div id="pc-total" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);"></div></div>
     <div class="field"><label>Note</label>
       <input type="text" id="pc-note" value="${o?esc(o.note||''):''}" placeholder="Coloris, finition, contact…"></div>
-    ${o && !o.livree ? `<p class="prod-note">\u00c9tat de fabrication : ${esc(prodEtatCommande(o).txt.toLowerCase())}. Il d\u00e9coule du stock de production.</p>` : ''}
+    ${o && !o.livree ? (()=>{ const pv = prodPrevision(o);
+        return `<div class="prod-row" style="border-left:3px solid ${pv ? pv.coul : 'var(--border)'};margin:4px 0 12px 0;">
+          <div class="prod-row-nom" style="font-size:13px;">Pr\u00e9vision</div>
+          <div class="prod-row-sub">${esc(pv ? pv.texte : '')}</div>
+          <div class="prod-row-sub" style="margin-top:4px;">La date \u00ab \u00e0 livrer le \u00bb ci-dessus est votre objectif ; la pr\u00e9vision, elle, suit le stock et les machines.</div>
+        </div>`; })() : ''}
     ${o?`<div style="margin-top:4px;">${o.livree
       ? `<button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="prodAnnuleLivraison('${o.id}')">Annuler la livraison</button>`
       : `<button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="prodLivre('${o.id}')">Marquer comme livr\u00e9e</button>
